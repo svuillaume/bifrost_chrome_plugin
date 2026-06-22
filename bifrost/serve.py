@@ -206,7 +206,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             result   = subprocess.run(
                 ['lacework', 'sca', 'scan', tmpdir,
                  '--deployment=offprem', '--noninteractive',
-                 '--save-results=false', '-f', 'lw-json', '-o', out_json],
+                 '--save-results=false', '-f', 'lw-json', '-o', out_json,
+                 '--secret=false'],   # skip secretsAll cloud query (times out)
                 capture_output=True, text=True, timeout=120,
             )
 
@@ -259,7 +260,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 'vulns':      findings,
                 'weaknesses': weaknesses,
                 'secrets':    secrets,
-                'stderr':     result.stderr[-2000:] if result.returncode not in (0, 1) else '',
+                'stderr':     result.stderr[-2000:] if result.returncode not in (0, 1, 2) else '',
             }).encode()
             self.send_json(200, body)
         except subprocess.TimeoutExpired:
