@@ -359,3 +359,339 @@ el('prompt').addEventListener('keydown', e => {
 el('send').addEventListener('click', send);
 
 el('prompt').focus();
+
+// ── FortiCNAPP CodeSec + SBOM ─────────────────────────────────────────────
+
+// Detect whether a snippet is a package manifest and return its canonical filename,
+// or fall back to a source-file extension. SCA requires real manifest filenames.
+function guessFilename(snippet, index) {
+  // Package manifests — must use exact filenames for lacework SCA to parse them
+  if (/^\s*\{[\s\S]*"dependencies"\s*:/.test(snippet))           return 'package.json';
+  if (/^\[packages\]|^\[dev-packages\]/m.test(snippet))          return 'Pipfile';
+  if (/^[a-zA-Z0-9_.-]+==[0-9]/.test(snippet))                  return 'requirements.txt';
+  if (/^\s*<project[\s\S]*<dependencies>/m.test(snippet))        return 'pom.xml';
+  if (/^module\s+\S+\s*\n[\s\S]*^require\s*\(/m.test(snippet))  return 'go.mod';
+  if (/^\[package\]\s*\nname\s*=/m.test(snippet))                return 'Cargo.toml';
+  if (/^gemspec|^gem\s+['"]/.test(snippet))                      return 'Gemfile';
+  if (/^<Project[\s\S]*PackageReference/m.test(snippet))         return `project${index}.csproj`;
+  if (/^\s*\{[\s\S]*"require"\s*:/m.test(snippet))               return 'composer.json';
+  if (/^name:\s*\S+\nversion:/m.test(snippet))                   return 'Chart.yaml'; // Helm
+
+  // Lock files
+  if (/^# yarn lockfile/.test(snippet))                          return 'yarn.lock';
+  if (/^# This file is automatically/m.test(snippet) &&
+      /version\s*=\s*\d/.test(snippet))                         return 'Pipfile.lock';
+
+  // Source files
+  if (/^\s*(import|from\s+\S+\s+import|def |class |if __name__)/.test(snippet)) return `snippet${index}.py`;
+  if (/^\s*(const|let|var|function\s|\(.*\)\s*=>|require\()/.test(snippet))      return `snippet${index}.js`;
+  if (/^\s*(import\s+\{|export\s+(default|const|function)|interface\s+\w)/.test(snippet)) return `snippet${index}.ts`;
+  if (/^\s*(package\s+\w|import\s+java\.|public\s+(class|interface))/.test(snippet))      return `snippet${index}.java`;
+  if (/<\?php/.test(snippet))                                    return `snippet${index}.php`;
+  if (/^\s*(resource|provider|variable|module|terraform)\s+"/.test(snippet))     return `snippet${index}.tf`;
+  if (/^\s*(FROM|RUN|COPY|EXPOSE|ENTRYPOINT)\s/.test(snippet))  return 'Dockerfile';
+  if (/^\s*(apiVersion|kind):\s/.test(snippet))                  return `manifest${index}.yaml`;
+  return `snippet${index}.txt`;
+}
+
+// ── GitHub repo scanner ───────────────────────────────────────────────────
+
+// Files worth fetching for SCA/SAST — manifests first, then common source
+const MANIFEST_NAMES = new Set([
+  'requirements.txt', 'requirements-dev.txt', 'requirements-test.txt',
+  'Pipfile', 'Pipfile.lock', 'setup.py', 'setup.cfg', 'pyproject.toml',
+  'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+  'go.mod', 'go.sum',
+  'pom.xml', 'build.gradle', 'build.gradle.kts', 'settings.gradle',
+  'Cargo.toml', 'Cargo.lock',
+  'Gemfile', 'Gemfile.lock',
+  'composer.json', 'composer.lock',
+  'Chart.yaml', 'Chart.lock',
+  'Dockerfile', '.dockerignore',
+]);
+const SOURCE_EXTS = new Set([
+  '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.go', '.rb', '.php',
+  '.tf', '.rs', '.cs', '.cpp', '.c', '.h', '.yaml', '.yml',
+]);
+const SKIP_DIRS = new Set([
+  'node_modules', '.git', 'vendor', 'dist', 'build', '__pycache__',
+  '.venv', 'venv', 'env', 'coverage', '.nyc_output',
+]);
+
+function githubRepoFromUrl(url) {
+  // Matches: github.com/owner/repo  (any path beneath)
+  const m = url.match(/github\.com\/([^/]+)\/([^/?#]+)/);
+  if (!m) return null;
+  return { owner: m[1], repo: m[2].replace(/\.git$/, '') };
+}
+
+async function fetchGithubRepoFiles(owner, repo) {
+  setStatus('fetching repo tree…', 'busy');
+
+  const ghHeaders = { Accept: 'application/vnd.github+json' };
+
+  // Get default branch
+  const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`,
+    { headers: ghHeaders });
+  if (!repoRes.ok) throw new Error(`GitHub API ${repoRes.status}: ${owner}/${repo}`);
+  const repoData = await repoRes.json();
+  const branch   = repoData.default_branch || 'main';
+
+  // Fetch full recursive file tree
+  const treeRes = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
+    { headers: ghHeaders });
+  if (!treeRes.ok) throw new Error(`Tree API ${treeRes.status}`);
+  const tree = await treeRes.json();
+
+  // Select which files to fetch: all manifests + source files (skip large/binary/vendor)
+  const candidates = (tree.tree || []).filter(item => {
+    if (item.type !== 'blob') return false;
+    if (item.size > 200_000) return false; // skip files >200 KB
+    const parts = item.path.split('/');
+    if (parts.some(p => SKIP_DIRS.has(p))) return false;
+    const name = parts[parts.length - 1];
+    const ext  = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+    return MANIFEST_NAMES.has(name) || SOURCE_EXTS.has(ext);
+  });
+
+  // Prioritise manifests, then source — cap total at 80 files to stay fast
+  const manifests = candidates.filter(f => {
+    const name = f.path.split('/').pop();
+    return MANIFEST_NAMES.has(name);
+  });
+  const sources = candidates.filter(f => {
+    const name = f.path.split('/').pop();
+    return !MANIFEST_NAMES.has(name);
+  });
+  const selected = [...manifests, ...sources].slice(0, 80);
+
+  // Fetch file contents in parallel batches of 10
+  const files = [];
+  for (let i = 0; i < selected.length; i += 10) {
+    const batch = selected.slice(i, i + 10);
+    setStatus(`fetching files ${i + 1}–${Math.min(i + 10, selected.length)} / ${selected.length}…`, 'busy');
+    const results = await Promise.all(batch.map(async item => {
+      try {
+        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${item.path}`;
+        const r = await fetch(rawUrl);
+        if (!r.ok) return null;
+        const code = await r.text();
+        return { filename: item.path.split('/').pop(), code, path: item.path };
+      } catch { return null; }
+    }));
+    files.push(...results.filter(Boolean));
+  }
+  return files;
+}
+
+// Extract all code blocks from the active tab and return named files for SCA.
+// On GitHub pages, fetches real repo files via the API instead of scraping HTML.
+async function extractPageCode() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error('No active tab');
+
+  const ghRepo = githubRepoFromUrl(tab.url || '');
+  if (ghRepo) {
+    const files = await fetchGithubRepoFiles(ghRepo.owner, ghRepo.repo);
+    appendTurn('system',
+      `🔍 GitHub: ${ghRepo.owner}/${ghRepo.repo} — ${files.length} file${files.length !== 1 ? 's' : ''} fetched`);
+    return { files, title: tab.title || 'page', url: tab.url || '' };
+  }
+
+  // Fallback: scrape <pre> blocks from the rendered page
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const snippets = [];
+      document.querySelectorAll('pre code, pre, textarea, .highlight, .code-block').forEach(node => {
+        const text = (node.innerText || node.textContent || '').trim();
+        if (text.length > 30) snippets.push(text);
+      });
+      const seen = new Set();
+      return snippets.filter(s => { if (seen.has(s)) return false; seen.add(s); return true; });
+    },
+  });
+  const snippets = result || [];
+  const usedNames = new Set();
+  const files = snippets.map((code, i) => {
+    let name = guessFilename(code, i);
+    if (usedNames.has(name)) {
+      const ext  = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+      const base = name.slice(0, name.length - ext.length);
+      name = `${base}_${i}${ext}`;
+    }
+    usedNames.add(name);
+    return { filename: name, code };
+  });
+  return { files, title: tab.title || 'page', url: tab.url || '' };
+}
+
+function severityOrder(s) {
+  return { critical: 0, high: 1, medium: 2, low: 3, info: 4 }[s?.toLowerCase()] ?? 5;
+}
+
+function renderCodeSecResults(data, mode) {
+  const panel = el('codesec-panel');
+  const body  = el('codesec-body');
+  el('codesec-panel-title').textContent = mode === 'sbom' ? '📦 FortiCNAPP SBOM' : '🛡 FortiCNAPP CodeSec';
+  panel.classList.add('open');
+  body.innerHTML = '';
+
+  if (mode === 'sbom') {
+    if (data.error) {
+      body.innerHTML = `<div class="cs-empty" style="color:var(--err)">${data.error}</div>`;
+      return;
+    }
+    const components = data.components || [];
+    const title = document.createElement('div');
+    title.className = 'cs-section-title';
+    title.textContent = `CycloneDX SBOM — ${components.length} component${components.length !== 1 ? 's' : ''}`;
+    body.appendChild(title);
+
+    const actions = document.createElement('div');
+    actions.className = 'cs-sbom-actions';
+    const dlBtn = document.createElement('button');
+    dlBtn.className = 'cs-sbom-btn';
+    dlBtn.textContent = '⬇ Download JSON';
+    dlBtn.addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      chrome.downloads ? chrome.downloads.download({ url, filename: 'sbom.cyclonedx.json' })
+                       : chrome.tabs.create({ url });
+    });
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'cs-sbom-btn';
+    copyBtn.textContent = '📋 Copy JSON';
+    copyBtn.addEventListener('click', () => navigator.clipboard.writeText(JSON.stringify(data, null, 2)));
+    actions.append(dlBtn, copyBtn);
+    body.appendChild(actions);
+
+    if (!components.length) {
+      const empty = document.createElement('div');
+      empty.className = 'cs-empty';
+      empty.textContent = 'No packages detected in page code snippets.';
+      body.appendChild(empty);
+      return;
+    }
+    const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    components.slice(0, 50).forEach(c => {
+      const row = document.createElement('div');
+      row.className = 'cs-row';
+      row.style.gridTemplateColumns = '1fr 80px';
+      row.innerHTML =
+        `<div class="cs-detail">${esc(c.name || '')}` +
+          `<span class="cs-sub"> ${esc(c.version || '')} · ${esc(c.type || '')}</span></div>` +
+        `<div class="cs-sub">${esc(c.licenses?.[0]?.license?.id || '—')}</div>`;
+      body.appendChild(row);
+    });
+    if (components.length > 50) {
+      const more = document.createElement('div');
+      more.className = 'cs-sub';
+      more.style.padding = '4px 0';
+      more.textContent = `… and ${components.length - 50} more components`;
+      body.appendChild(more);
+    }
+    return;
+  }
+
+  // CodeSec mode
+  const all = [
+    ...(data.secrets   || []).map(f => ({ ...f, _cat: 'Secrets' })),
+    ...(data.weaknesses|| []).map(f => ({ ...f, _cat: 'SAST Weaknesses' })),
+    ...(data.vulns     || []).map(f => ({ ...f, _cat: 'SCA Vulnerabilities' })),
+  ].sort((a, b) => severityOrder(a.severity) - severityOrder(b.severity));
+
+  if (!all.length) {
+    const ok = document.createElement('div');
+    ok.className = 'cs-empty';
+    ok.textContent = '✓ No vulnerabilities, weaknesses, or secrets detected.';
+    body.appendChild(ok);
+    return;
+  }
+
+  const byCategory = {};
+  all.forEach(f => {
+    (byCategory[f._cat] = byCategory[f._cat] || []).push(f);
+  });
+
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  Object.entries(byCategory).forEach(([cat, findings]) => {
+    const title = document.createElement('div');
+    title.className = 'cs-section-title';
+    title.textContent = `${cat} (${findings.length})`;
+    body.appendChild(title);
+
+    findings.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'cs-row';
+      const sev     = (f.severity || 'info').toLowerCase();
+      const idStr   = f.id || '';
+      // Truncate long CVE descriptions to first sentence / 120 chars
+      const rawDesc = f.title || (f.description || '').split('\n')[0].slice(0, 120) || idStr;
+      const locStr  = f.file ? `${f.file}${f.line ? ':' + f.line : ''}` : '';
+      const fixStr  = f.fixVersion || '';
+      row.innerHTML =
+        `<div class="cs-sev ${esc(sev)}">${esc(sev)}</div>` +
+        `<div class="cs-detail">${esc(rawDesc)}` +
+          (idStr   ? `<span class="cs-sub"> [${esc(idStr)}]</span>` : '') +
+          (locStr  ? `<span class="cs-sub"> ${esc(locStr)}</span>`  : '') +
+          (fixStr  ? `<span class="cs-sub"> → fix: ${esc(fixStr)}</span>` : '') +
+        `</div>`;
+      body.appendChild(row);
+    });
+  });
+
+  if (data.stderr) {
+    const warn = document.createElement('div');
+    warn.className = 'cs-sub';
+    warn.style.cssText = 'padding:6px 0;color:var(--err)';
+    warn.textContent = `Scanner warning: ${data.stderr}`;
+    body.appendChild(warn);
+  }
+}
+
+async function runCodeSec(mode) {
+  const btn = el(mode === 'sbom' ? 'sbom' : 'codesec');
+  btn.classList.add('busy');
+  btn.disabled = true;
+  setStatus(`${mode === 'sbom' ? 'generating SBOM' : 'scanning'}…`, 'busy');
+
+  try {
+    const { files } = await extractPageCode();
+    if (!files.length) {
+      appendTurn('system', 'No code blocks found on this page.');
+      setStatus('—');
+      return;
+    }
+
+    const res = await fetch(`http://localhost:8765/${mode === 'sbom' ? 'sbom' : 'codesec'}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ files }),
+    });
+    if (!res.ok) throw new Error(`Scan endpoint returned ${res.status}`);
+    const data = await res.json();
+    renderCodeSecResults(data, mode);
+
+    if (mode !== 'sbom') {
+      const total = (data.vulns?.length || 0) + (data.weaknesses?.length || 0) + (data.secrets?.length || 0);
+      setStatus(total ? `${total} finding${total !== 1 ? 's' : ''}` : 'clean', total ? 'err' : 'ok');
+    } else {
+      setStatus('sbom ready', 'ok');
+    }
+  } catch (e) {
+    appendTurn('system', `CodeSec error: ${e.message}`);
+    setStatus('error', 'err');
+  } finally {
+    btn.classList.remove('busy');
+    btn.disabled = false;
+  }
+}
+
+el('codesec').addEventListener('click', () => runCodeSec('scan'));
+el('sbom').addEventListener('click',    () => runCodeSec('sbom'));
+el('codesec-close').addEventListener('click', () => {
+  el('codesec-panel').classList.remove('open');
+});

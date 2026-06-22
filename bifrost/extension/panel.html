@@ -111,7 +111,7 @@ body {
 #status.err  { color: var(--err); }
 #status.busy { color: var(--muted); }
 
-#clear, #read-page, #tldr {
+#clear, #read-page, #tldr, #codesec, #sbom {
   font-family: var(--mono);
   font-size: 11px;
   background: transparent;
@@ -126,6 +126,85 @@ body {
 #read-page:hover  { color: var(--accent); border-color: var(--accent); }
 #read-page.active { color: var(--ok);     border-color: var(--ok); }
 #tldr:hover       { color: var(--accent); border-color: var(--accent); }
+#codesec:hover    { color: #e07020;       border-color: #e07020; }
+#codesec.busy     { color: var(--muted);  border-color: var(--border); cursor: wait; }
+#sbom:hover       { color: var(--accent); border-color: var(--accent); }
+#sbom.busy        { color: var(--muted);  border-color: var(--border); cursor: wait; }
+
+/* ── CodeSec results drawer ── */
+#codesec-panel {
+  display: none;
+  flex-direction: column;
+  background: var(--surface);
+  border-top: 2px solid #e07020;
+  flex-shrink: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+#codesec-panel.open { display: flex; }
+#codesec-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+  color: #e07020;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+#codesec-header .cs-close {
+  margin-left: auto;
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1;
+}
+#codesec-header .cs-close:hover { color: var(--err); }
+#codesec-body { padding: 8px 12px; }
+.cs-section-title {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin: 8px 0 4px;
+}
+.cs-section-title:first-child { margin-top: 0; }
+.cs-row {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 4px 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.45;
+}
+.cs-row:last-child { border-bottom: none; }
+.cs-sev {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+.cs-sev.critical { color: #d03030; }
+.cs-sev.high     { color: #d06020; }
+.cs-sev.medium   { color: #c0a020; }
+.cs-sev.low      { color: var(--muted); }
+.cs-detail { color: var(--text); }
+.cs-detail .cs-sub { color: var(--muted); font-size: 10px; }
+.cs-empty { color: var(--ok); padding: 4px 0; }
+.cs-sbom-actions { display: flex; gap: 8px; padding: 4px 0 2px; }
+.cs-sbom-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.cs-sbom-btn:hover { border-color: var(--accent); }
 
 /* ── Messages ── */
 #log {
@@ -270,13 +349,25 @@ body {
     <option value="claude-haiku-4-5" selected>haiku-4-5 ⚡</option>
     <option value="claude-sonnet-4-6">sonnet-4-6</option>
     <option value="claude-opus-4-8">opus-4-8</option>
+    <option value="deepseek-v4-flash">deepseek-v4-flash ⚡</option>
+    <option value="deepseek-v4-pro">deepseek-v4-pro</option>
   </select>
   <input id="search-input" type="hidden" />
   <span id="search-dot" style="display:none"></span>
   <button id="read-page" title="Read current page into context">📄 Read Web Page</button>
   <button id="tldr" title="Summarize current page">TL;DR</button>
+  <button id="codesec" title="Run FortiCNAPP SCA + SAST scan on code in this page">🛡 CodeSec</button>
+  <button id="sbom" title="Generate SBOM from code in this page">📦 SBOM</button>
   <button id="clear">clear</button>
   <span id="status">—</span>
+</div>
+
+<div id="codesec-panel">
+  <div id="codesec-header">
+    <span id="codesec-panel-title">🛡 FortiCNAPP CodeSec</span>
+    <span class="cs-close" id="codesec-close">✕</span>
+  </div>
+  <div id="codesec-body"></div>
 </div>
 
 <div id="log"></div>

@@ -43,19 +43,19 @@ fi
 
 # ── Step 3: choose backend ────────────────────────────────────────────────
 echo ""
-echo "  How do you want to run web search?"
+echo "  How do you want to run Bifrost?"
 echo ""
-echo "  [1] Docker  — SearXNG container on localhost:8080"
-echo "               Requires Docker Desktop. Fast, self-contained."
+echo "  [1] Docker  — All services in containers (SearXNG + Bifrost + CodeSec)"
+echo "               Requires Docker Desktop. Includes lacework SCA/SAST scanning."
 echo ""
-echo "  [2] Python  — serve.py venv proxy on localhost:8765"
-echo "               No Docker needed. Uses your Python venv."
+echo "  [2] Python  — serve.py in a local venv + SearXNG in Docker"
+echo "               Lighter weight. CodeSec requires lacework CLI installed locally."
 echo ""
 read -rp "  Enter 1 or 2: " choice
 
 case "$choice" in
   1)
-    # ── Docker path ───────────────────────────────────────────────────────
+    # ── Full Docker path ──────────────────────────────────────────────────
     info "Checking Docker..."
     docker info >/dev/null 2>&1 || error "Docker is not running. Start Docker Desktop and try again."
 
@@ -63,16 +63,55 @@ case "$choice" in
       info "Generating SearXNG config..."
       mkdir -p searxng
       SECRET=$(openssl rand -hex 32)
-      sed "s/REPLACE_WITH_RANDOM_SECRET/${SECRET}/" searxng.settings.yml.tpl > searxng/settings.yml
+      sed "s/<INSERT_RANDOM_SECRET_HERE>/${SECRET}/" searxng.settings.yml.tpl > searxng/settings.yml
+      info "searxng/settings.yml created"
+    else
+      info "searxng/settings.yml already exists — skipping"
+    fi
+
+    info "Building and starting all containers (first build may take a few minutes)..."
+    docker compose up -d --build
+
+    # wait up to 20s for bifrost to be ready
+    echo -n "  Waiting for Bifrost"
+    for i in $(seq 1 20); do
+      if curl -s "http://localhost:8765/config" >/dev/null 2>&1; then
+        echo " ✓"
+        break
+      fi
+      echo -n "."
+      sleep 1
+    done
+
+    info "All services running"
+    echo ""
+    echo "  Chatbox  →  http://localhost:8765"
+    echo "  Search   →  http://localhost:8080"
+    echo "  CodeSec  →  POST http://localhost:8765/codesec"
+    echo "  SBOM     →  POST http://localhost:8765/sbom"
+    echo ""
+    echo "  To stop: docker compose down"
+    ;;
+
+  2)
+    # ── Python venv + Docker SearXNG path ────────────────────────────────
+    info "Checking Docker for SearXNG..."
+    docker info >/dev/null 2>&1 || error "Docker is not running. Start Docker Desktop and try again."
+
+    if [ ! -f searxng/settings.yml ]; then
+      info "Generating SearXNG config..."
+      mkdir -p searxng
+      SECRET=$(openssl rand -hex 32)
+      sed "s/<INSERT_RANDOM_SECRET_HERE>/${SECRET}/" searxng.settings.yml.tpl > searxng/settings.yml
       info "searxng/settings.yml created"
     else
       info "searxng/settings.yml already exists — skipping"
     fi
 
     info "Starting SearXNG container..."
-    docker compose up -d
+    docker compose up -d searxng
 
-    # wait up to 10s for it to be ready
+    # wait up to 10s for SearXNG
     echo -n "  Waiting for SearXNG"
     for i in $(seq 1 10); do
       if curl -s "http://localhost:8080/search?q=test&format=json" >/dev/null 2>&1; then
@@ -83,24 +122,24 @@ case "$choice" in
       sleep 1
     done
 
-    info "SearXNG running at http://localhost:8080"
-    echo ""
-    echo "  Extension search URL: http://localhost:8080"
-    echo "  To stop: docker compose down"
-    ;;
-
-  2)
-    # ── Python venv path ──────────────────────────────────────────────────
     info "Setting up Python venv..."
     python3 -m venv .venv
     # shellcheck disable=SC1091
     source .venv/bin/activate
 
-    info "Starting serve.py search proxy..."
+    if ! command -v lacework >/dev/null 2>&1; then
+      warn "lacework CLI not found — CodeSec and SBOM scanning will be unavailable."
+      warn "Install it with: curl -sL https://raw.githubusercontent.com/lacework/go-sdk/main/cli/install.sh | bash"
+    else
+      info "lacework CLI found — CodeSec and SBOM scanning enabled."
+    fi
+
+    info "Starting serve.py..."
     echo ""
-    echo "  serve.py will run on http://localhost:8765"
-    echo "  Search endpoint: http://localhost:8765/search?q=..."
-    echo "  It proxies to: ${SEARXNG_URL:-http://localhost:8080} (set SEARXNG_URL in .env to override)"
+    echo "  Chatbox  →  http://localhost:8765"
+    echo "  Search   →  http://localhost:8080"
+    echo "  CodeSec  →  POST http://localhost:8765/codesec"
+    echo "  SBOM     →  POST http://localhost:8765/sbom"
     echo ""
     echo "  Press Ctrl+C to stop."
     echo ""

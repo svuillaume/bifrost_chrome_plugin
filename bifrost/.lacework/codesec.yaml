@@ -1,7 +1,8 @@
-#Optional - only if you are running LW CodeScan and venv 
+#Optional - only if you are running LW CodeScan and venv
 default:
   sca:
     enabled: true
     scan:
+      sast: true
       exclude:
         - ".venv/**"
