@@ -18,6 +18,9 @@ import http.server, json, os, shutil, socketserver, subprocess, tempfile, urllib
 
 PORT      = 8765
 DIR       = os.path.dirname(os.path.abspath(__file__))
+
+# Last compliance PDF cache: {'name': str, 'bytes': bytes}
+_last_compliance_pdf: dict = {}
 HTML_FILE = os.path.join(DIR, 'chatbox.html')
 
 def load_env():
@@ -85,6 +88,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.serve_search()
         elif self.path == '/compliance/list':
             self.serve_compliance_list()
+        elif self.path == '/compliance/latest-text':
+            self.serve_compliance_text()
         else:
             self.send_error(404)
 
@@ -323,66 +328,120 @@ class Handler(http.server.BaseHTTPRequestHandler):
         token_data = json.loads(resp.read())
         return token_data['token'], base_url
 
+    def _lw_alert_channel(self, token, base_url):
+        """Return the first available alert channel guid from the tenant."""
+        req  = urllib.request.Request(
+            f'{base_url}/api/v2/ReportConfigurations',
+            headers={'Authorization': f'Bearer {token}'})
+        resp = urllib.request.urlopen(req, timeout=10)
+        for cfg in json.loads(resp.read()).get('data', []):
+            chs = cfg.get('alertChannels', [])
+            if chs:
+                return chs[0]
+        raise ValueError('No alert channel found — at least one ReportConfiguration must exist')
+
     def serve_compliance_list(self):
-        """Return all ReportConfigurations from the FortiCNAPP tenant."""
+        """Return all frameworks from /api/v2/Frameworks grouped by cloud."""
         try:
             token, base_url = self._lw_token()
         except Exception as e:
             self.send_json(503, json.dumps({'error': str(e)}).encode())
             return
         req = urllib.request.Request(
-            f'{base_url}/api/v2/ReportConfigurations',
-            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
+            f'{base_url}/api/v2/Frameworks',
+            headers={'Authorization': f'Bearer {token}'})
         try:
-            resp = urllib.request.urlopen(req, timeout=15)
-            raw  = json.loads(resp.read())
-            # Return simplified list: guid, name, type, format
-            configs = [
+            resp       = urllib.request.urlopen(req, timeout=15)
+            frameworks = json.loads(resp.read()).get('data', [])
+            result = [
                 {
-                    'guid':   r['reportConfigGuid'],
-                    'name':   r['name'],
-                    'type':   r.get('type', ''),
-                    'format': r.get('format', 'pdf'),
+                    'guid':   f['guid'],
+                    'name':   f['name'],
+                    'clouds': f.get('domains', []),
                 }
-                for r in raw.get('data', [])
+                for f in frameworks
+                if f.get('guid') and f.get('name')
             ]
-            self.send_json(200, json.dumps({'configs': configs}).encode())
+            self.send_json(200, json.dumps({'frameworks': result}).encode())
         except urllib.error.HTTPError as e:
             self.send_json(e.code, e.read())
 
     def serve_compliance(self):
-        """Accept JSON {guid}, call generate endpoint, stream PDF back."""
+        """Accept {frameworkGuid, frameworkName}, create temp config, generate PDF, delete config."""
         try:
             payload = json.loads(self._read_body())
         except json.JSONDecodeError:
-            self.send_error(400, 'Expected JSON {guid}')
+            self.send_error(400, 'Expected JSON {frameworkGuid, frameworkName}')
             return
 
-        guid = payload.get('guid', '').strip()
-        if not guid:
-            self.send_json(400, json.dumps({'error': 'guid is required'}).encode())
+        fw_guid = payload.get('frameworkGuid', '').strip()
+        fw_name = payload.get('frameworkName', fw_guid)
+        clouds  = payload.get('clouds', [])
+
+        if not fw_guid:
+            self.send_json(400, json.dumps({'error': 'frameworkGuid is required'}).encode())
             return
 
         try:
             token, base_url = self._lw_token()
+            alert_ch        = self._lw_alert_channel(token, base_url)
         except Exception as e:
             self.send_json(503, json.dumps({'error': str(e)}).encode())
             return
 
-        # Use last 7 days as the report window
+        # Pick resource group based on cloud
+        cloud_str = ' '.join(clouds).upper()
+        if 'AZURE' in cloud_str:
+            rg = 'LACEWORK_RESOURCE_GROUP_ALL_AZURE'
+        elif 'GCP' in cloud_str or 'GOOGLE' in cloud_str:
+            rg = 'LACEWORK_RESOURCE_GROUP_ALL_GCP'
+        elif 'OCI' in cloud_str or 'ORACLE' in cloud_str:
+            rg = 'LACEWORK_RESOURCE_GROUP_ALL_OCI'
+        else:
+            rg = 'LACEWORK_RESOURCE_GROUP_ALL_AWS'
+
         import datetime
         end   = datetime.datetime.now(datetime.timezone.utc)
         start = end - datetime.timedelta(days=7)
         fmt_t = lambda d: d.strftime('%Y-%m-%dT%H:%M:%SZ')
-        url = (f'{base_url}/api/v2/ReportConfigurations/{guid}/generate'
-               f'?startTime={fmt_t(start)}&endTime={fmt_t(end)}&format=pdf')
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
 
-        req = urllib.request.Request(url, method='POST',
-            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
+        # Create temp ReportConfiguration
+        cfg_body = json.dumps({
+            'name':         f'bifrost-tmp-{fw_guid[:8]}',
+            'format':       'PDF',
+            'type':         'Compliance',
+            'templateGuid': fw_guid,
+            'frequency':    'monthly',
+            'enabled':      0,
+            'filters': {
+                'severities': ['critical','high','medium','low','info'],
+                'violations': ['Compliant','NonCompliant','Suppressed','CouldNotAssess','Manual'],
+            },
+            'resourceGroups': [rg],
+            'alertChannels':  [alert_ch],
+        }).encode()
+
+        cfg_guid = None
         try:
-            resp = urllib.request.urlopen(req, timeout=120)
-            pdf_bytes = resp.read()
-            self.send_pdf(pdf_bytes, f'compliance-{guid}.pdf')
+            req  = urllib.request.Request(
+                f'{base_url}/api/v2/ReportConfigurations',
+                data=cfg_body, method='POST', headers=headers)
+            resp = urllib.request.urlopen(req, timeout=15)
+            cfg_guid = json.loads(resp.read())['data']['reportConfigGuid']
+
+            # Generate PDF
+            gen_url = (f'{base_url}/api/v2/ReportConfigurations/{cfg_guid}/generate'
+                       f'?startTime={fmt_t(start)}&endTime={fmt_t(end)}&format=pdf')
+            req2     = urllib.request.Request(gen_url, method='POST', headers=headers)
+            resp2    = urllib.request.urlopen(req2, timeout=120)
+            pdf_bytes = resp2.read()
+            safe_name = fw_name.replace('/', '-').replace(' ', '_')[:60]
+            # Cache for /compliance/latest-text
+            _last_compliance_pdf['name']  = fw_name
+            _last_compliance_pdf['bytes'] = pdf_bytes
+            self.send_pdf(pdf_bytes, f'compliance-{safe_name}.pdf')
+
         except urllib.error.HTTPError as e:
             err_body = e.read()
             try:
@@ -390,6 +449,46 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception:
                 err_msg = err_body.decode()[:500]
             self.send_json(e.code, json.dumps({'error': err_msg}).encode())
+        finally:
+            # Always clean up the temp config
+            if cfg_guid:
+                try:
+                    urllib.request.urlopen(
+                        urllib.request.Request(
+                            f'{base_url}/api/v2/ReportConfigurations/{cfg_guid}',
+                            method='DELETE', headers=headers),
+                        timeout=10)
+                except Exception:
+                    pass
+
+    def serve_compliance_text(self):
+        """Extract text from the last generated compliance PDF and return as JSON."""
+        if not _last_compliance_pdf.get('bytes'):
+            self.send_json(404, json.dumps({'error': 'No compliance PDF generated yet'}).encode())
+            return
+        pdf_bytes = _last_compliance_pdf['bytes']
+        fw_name   = _last_compliance_pdf.get('name', 'Compliance Report')
+        # Try pdftotext if available; otherwise return base64 for client-side fallback
+        if shutil.which('pdftotext'):
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
+                f.write(pdf_bytes)
+                tmppath = f.name
+            try:
+                result = subprocess.run(
+                    ['pdftotext', '-layout', tmppath, '-'],
+                    capture_output=True, timeout=30)
+                text = result.stdout.decode('utf-8', errors='replace')
+                self.send_json(200, json.dumps({'name': fw_name, 'text': text}).encode())
+            finally:
+                os.unlink(tmppath)
+        else:
+            import base64
+            self.send_json(200, json.dumps({
+                'name':   fw_name,
+                'text':   None,
+                'base64': base64.b64encode(pdf_bytes).decode(),
+                'note':   'Install pdftotext (poppler-utils) for text extraction',
+            }).encode())
 
     def log_message(self, fmt, *args):
         print(f'  {self.address_string()} {fmt % args}')

@@ -66,6 +66,31 @@ body {
   flex-wrap: wrap;
 }
 
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.tool-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ok);
+  padding: 3px 6px;
+  background: var(--surface2);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  user-select: none;
+  letter-spacing: .3px;
+}
+.tool-group button {
+  border-radius: 0 !important;
+  border: none !important;
+  border-left: 1px solid var(--border) !important;
+}
+
 .brand {
   font-size: 12px;
   font-weight: 700;
@@ -418,9 +443,12 @@ body {
   <span id="search-dot" style="display:none"></span>
   <button id="read-page" title="Read current page into context">📄 Read Web Page</button>
   <button id="tldr" title="Summarize current page">TL;DR</button>
-  <button id="codesec" title="Run FortiCNAPP SCA + SAST scan on code in this page">🛡 CodeSec</button>
-  <button id="sbom" title="SBOM export (coming soon)" disabled style="display:none">📦 SBOM</button>
-  <button id="compliance" title="Generate FortiCNAPP compliance PDF report">📋 Compliance</button>
+  <div class="tool-group">
+    <span class="tool-group-label">FortiCNAPP</span>
+    <button id="codesec" title="Run FortiCNAPP SCA + SAST scan on code in this page">🛡 CodeSec</button>
+    <button id="sbom" title="SBOM export (coming soon)" disabled style="display:none">📦 SBOM</button>
+    <button id="compliance" title="Generate FortiCNAPP compliance PDF report">📋 Compliance</button>
+  </div>
   <button id="clear">clear</button>
   <span id="status">—</span>
 </div>

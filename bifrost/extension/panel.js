@@ -719,17 +719,33 @@ async function loadComplianceReports() {
     const res  = await fetch('http://localhost:8765/compliance/list');
     const data = await res.json();
     if (data.error) throw new Error(data.error);
-    const configs = data.configs || [];
-    sel.innerHTML = '';
-    if (!configs.length) {
-      sel.innerHTML = '<option value="">No report configs found</option>';
+    const frameworks = data.frameworks || [];
+    if (!frameworks.length) {
+      sel.innerHTML = '<option value="">No frameworks found</option>';
       return;
     }
-    configs.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value       = c.guid;
-      opt.textContent = c.name;
-      sel.appendChild(opt);
+    // Group by cloud (first domain or "Other")
+    const CLOUD_ORDER = ['AWS', 'AZURE', 'GCP', 'OCI', 'Kubernetes', 'Other'];
+    const groups = {};
+    CLOUD_ORDER.forEach(c => { groups[c] = []; });
+    frameworks.forEach(f => {
+      const clouds = f.clouds || [];
+      const key = clouds.find(c => groups[c] !== undefined) || 'Other';
+      groups[key].push(f);
+    });
+    sel.innerHTML = '';
+    CLOUD_ORDER.forEach(cloud => {
+      const items = groups[cloud];
+      if (!items.length) return;
+      const grp = document.createElement('optgroup');
+      grp.label = cloud;
+      items.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = JSON.stringify({ guid: f.guid, name: f.name, clouds: f.clouds });
+        opt.textContent = f.name;
+        grp.appendChild(opt);
+      });
+      sel.appendChild(grp);
     });
     sel.disabled = false;
   } catch (e) {
@@ -740,10 +756,12 @@ async function loadComplianceReports() {
 async function runComplianceReport() {
   const btn      = el('comp-generate');
   const statusEl = el('comp-status');
-  const guid     = el('comp-report').value;
-  const name     = el('comp-report').selectedOptions[0]?.textContent || guid;
+  const raw      = el('comp-report').value;
 
-  if (!guid) { statusEl.textContent = '✗ Select a report first'; statusEl.className = 'err'; return; }
+  if (!raw) { statusEl.textContent = '✗ Select a framework first'; statusEl.className = 'err'; return; }
+
+  let fw;
+  try { fw = JSON.parse(raw); } catch { fw = { guid: raw, name: raw, clouds: [] }; }
 
   btn.disabled         = true;
   statusEl.textContent = 'generating…';
@@ -754,7 +772,7 @@ async function runComplianceReport() {
     const res = await fetch('http://localhost:8765/compliance', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ guid }),
+      body:    JSON.stringify({ frameworkGuid: fw.guid, frameworkName: fw.name, clouds: fw.clouds }),
     });
 
     if (!res.ok) {
@@ -766,17 +784,25 @@ async function runComplianceReport() {
     if (ct.includes('pdf') || ct.includes('octet-stream')) {
       const blob  = await res.blob();
       const url   = URL.createObjectURL(blob);
-      const fname = `compliance-${guid}.pdf`;
+      const safe  = fw.name.replace(/[^a-z0-9]/gi, '_').slice(0, 50);
+      const fname = `compliance-${safe}.pdf`;
       chrome.downloads
         ? chrome.downloads.download({ url, filename: fname })
         : chrome.tabs.create({ url });
       statusEl.textContent = '✓ PDF downloaded';
       statusEl.className   = 'ok';
       setStatus('PDF ready', 'ok');
-      appendTurn('system', `📋 Compliance PDF: ${name}`);
+      const msgEl  = appendTurn('system', `📋 Compliance PDF: ${fw.name}`);
+      const askBtn = document.createElement('button');
+      askBtn.className   = 'cs-sbom-btn';
+      askBtn.textContent = '🔍 Ask about this PDF';
+      askBtn.style.marginTop = '6px';
+      askBtn.addEventListener('click', () => loadCompliancePdfText(fw.name));
+      msgEl.appendChild(document.createElement('br'));
+      msgEl.appendChild(askBtn);
     } else {
-      const data = await res.json();
-      throw new Error(data.error || 'No PDF returned');
+      const d = await res.json();
+      throw new Error(d.error || 'No PDF returned');
     }
   } catch (e) {
     statusEl.textContent = `✗ ${e.message}`;
@@ -789,3 +815,25 @@ async function runComplianceReport() {
 }
 
 el('comp-generate').addEventListener('click', runComplianceReport);
+
+async function loadCompliancePdfText(reportName) {
+  appendTurn('system', `📖 Loading "${reportName}" into context…`);
+  try {
+    const res  = await fetch('http://localhost:8765/compliance/latest-text');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    if (data.text) {
+      const MAX = 40000;
+      const text = data.text.length > MAX
+        ? data.text.slice(0, MAX) + `\n\n[Truncated — ${data.text.length} chars total]`
+        : data.text;
+      history.push({ role: 'user', content: `Here is the content of the compliance report "${data.name}":\n\n${text}\n\nAsk me anything about this report.` });
+      appendTurn('system', `✓ "${data.name}" loaded — ask your questions below.`);
+    } else if (data.note) {
+      appendTurn('system', `⚠ ${data.note} — PDF text extraction not available.`);
+    }
+  } catch (e) {
+    appendTurn('system', `PDF load error: ${e.message}`);
+  }
+}
