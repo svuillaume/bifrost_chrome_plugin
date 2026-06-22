@@ -1,1 +1,8 @@
 eks-cluster/
+lql/
+weather-mcp/
+.DS_Store
+.gitmodules
+blisters.md
+forticnapp-azure-ciem.md
+forticnapp-azure-integration.skill

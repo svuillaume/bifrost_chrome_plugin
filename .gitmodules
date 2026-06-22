@@ -1,6 +1,0 @@
-[submodule "lql"]
-	path = lql
-	url = https://github.com/svuillaume/dlql.git
-[submodule "weather-mcp"]
-	path = weather-mcp
-	url = https://github.com/svuillaume/weather-mcp.git
