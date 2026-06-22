@@ -2,7 +2,3 @@
 .gitmodules
 .lacework/
 .env
-.env.tpl
-api.key
-blisters.md
-cnapp.html
