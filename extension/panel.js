@@ -62,11 +62,7 @@ const GATEWAYS = {
   },
 };
 
-const WEB_SEARCH_TOOL = {
-  name: 'web_search',
-  description: 'Search the web for current information, recent events, or live data.',
-  input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
-};
+const WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search' };
 
 // ── State ─────────────────────────────────────────────────────────────────
 const history = [];
@@ -76,7 +72,7 @@ let busy = false;
 const el          = id => document.getElementById(id);
 const urlInput    = el('url-input');
 const keyInput    = el('key-input');
-const searchInput = el('search-input'); // hidden — holds SearXNG base URL
+const searchInput = el('search-input'); // hidden — holds Helicone secondary auth key
 
 const setStatus = (text, state = '') => {
   el('status').textContent = text;
@@ -184,24 +180,9 @@ searchInput.addEventListener('change', () => saveSession('bf_search', searchInpu
 el('model').addEventListener('change', () => chrome.storage.local.set({ bf_model: el('model').value }));
 
 // ── Web search ────────────────────────────────────────────────────────────
-// Tries Docker SearXNG (8080) first; falls back to serve.py proxy (8765).
-async function webSearch(query) {
-  const q = encodeURIComponent(query);
-  let res;
-  try {
-    res = await fetch(`http://localhost:8080/search?q=${q}&format=json&language=en`,
-      { signal: AbortSignal.timeout(4000) });
-  } catch {
-    res = await fetch(`http://localhost:8765/search?q=${q}`,
-      { signal: AbortSignal.timeout(8000) });
-  }
-  if (!res.ok) throw new Error(`Search returned ${res.status}`);
-  const { results = [] } = await res.json();
-  if (!results.length) return 'No results found.';
-  return results.slice(0, 5)
-    .map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.content || ''}`)
-    .join('\n\n');
-}
+// Uses Anthropic's native web_search_20260209 server-side tool — no local
+// SearXNG instance required. Search happens during inference on Anthropic's
+// infrastructure; the extension just declares the tool and streams the result.
 
 // ── Markdown renderer ─────────────────────────────────────────────────────
 // Escape FIRST, then transform — model output can never inject executable HTML.
@@ -324,8 +305,8 @@ el('tldr').addEventListener('click', () => withPage('tldr', async page => {
 async function readStream(res, bubble, cursor) {
   const reader = res.body.getReader();
   const dec    = new TextDecoder();
-  let buf = '', out = '', inputTk = 0, outputTk = 0, stopReason = null;
-  const toolCalls = {};
+  let buf = '', out = '', inputTk = 0, outputTk = 0;
+  let searchMarker = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -342,25 +323,35 @@ async function readStream(res, bubble, cursor) {
 
       if (ev.type === 'message_start')
         inputTk = ev.message?.usage?.input_tokens ?? 0;
-      if (ev.type === 'message_delta') {
-        outputTk   = ev.usage?.output_tokens  ?? outputTk;
-        stopReason = ev.delta?.stop_reason    ?? stopReason;
+      if (ev.type === 'message_delta')
+        outputTk = ev.usage?.output_tokens ?? outputTk;
+
+      // Server-side web_search tool: show a "searching…" indicator in the bubble
+      if (ev.type === 'content_block_start' && ev.content_block?.type === 'server_tool_use'
+          && ev.content_block?.name === 'web_search') {
+        searchMarker = document.createElement('span');
+        searchMarker.className = 'search-marker';
+        searchMarker.textContent = ' [searching…] ';
+        bubble.appendChild(searchMarker);
+        bubble.appendChild(cursor);
+        setStatus('searching…', 'busy');
       }
-      if (ev.type === 'content_block_start' && ev.content_block?.type === 'tool_use')
-        toolCalls[ev.index] = { id: ev.content_block.id, name: ev.content_block.name, input_json: '' };
-      if (ev.type === 'content_block_delta') {
-        if (ev.delta?.type === 'text_delta') {
-          out += ev.delta.text;
-          setRendered(bubble, renderMarkdown(out));
-          bubble.appendChild(cursor);
-          scrollLog();
-        }
-        if (ev.delta?.type === 'input_json_delta' && toolCalls[ev.index])
-          toolCalls[ev.index].input_json += ev.delta.partial_json;
+      // Remove the "searching…" marker once the tool result arrives
+      if (ev.type === 'content_block_start' && ev.content_block?.type === 'tool_result') {
+        if (searchMarker) { searchMarker.remove(); searchMarker = null; }
+        setStatus('streaming…', 'busy');
+      }
+
+      if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+        if (searchMarker) { searchMarker.remove(); searchMarker = null; }
+        out += ev.delta.text;
+        setRendered(bubble, renderMarkdown(out));
+        bubble.appendChild(cursor);
+        scrollLog();
       }
     }
   }
-  return { out, inputTk, outputTk, stopReason, toolCalls: Object.values(toolCalls) };
+  return { out, inputTk, outputTk };
 }
 
 // ── Send ──────────────────────────────────────────────────────────────────
@@ -370,8 +361,6 @@ async function send(silent = false) {
 
   const baseUrl   = urlInput.value.trim().replace(/\/+$/, '');
   const key       = keyInput.value.trim();
-  const hasSearch = !!searchInput.value.trim();
-
   if (!baseUrl) { appendTurn('system', 'No endpoint URL — enter the gateway base URL above.'); return; }
   if (!key)     { appendTurn('system', 'No API key — enter your sk-bf-… key above.');          return; }
 
@@ -398,63 +387,30 @@ async function send(silent = false) {
   let inputTk = 0, outputTk = 0;
 
   try {
-    while (true) {
-      setStatus('streaming…', 'busy');
-      const body = {
-        model: el('model').value, max_tokens: MAX_TOKENS,
-        stream: true, system: SYSTEM_PROMPT, messages: history,
-      };
-      if (hasSearch) body.tools = [WEB_SEARCH_TOOL];
+    setStatus('streaming…', 'busy');
+    const body = {
+      model: el('model').value, max_tokens: MAX_TOKENS,
+      stream: true, system: SYSTEM_PROMPT, messages: history,
+      tools: [WEB_SEARCH_TOOL],
+    };
 
-      const res = await fetch(`${baseUrl}/v1/messages`, {
-        method: 'POST', headers, body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
+    const res = await fetch(`${baseUrl}/v1/messages`, {
+      method: 'POST', headers, body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
 
-      const { out, inputTk: iTk, outputTk: oTk, stopReason, toolCalls } =
-        await readStream(res, bubble, cursor);
-      inputTk += iTk; outputTk += oTk;
+    const { out, inputTk: iTk, outputTk: oTk } = await readStream(res, bubble, cursor);
+    inputTk += iTk; outputTk += oTk;
 
-      if (hasSearch && stopReason === 'tool_use' && toolCalls.length) {
-        const asst = out ? [{ type: 'text', text: out }] : [];
-        for (const tc of toolCalls) {
-          const input = tryParse(tc.input_json);
-          asst.push({ type: 'tool_use', id: tc.id, name: tc.name, input });
-        }
-        history.push({ role: 'assistant', content: asst });
-
-        const toolResults = [];
-        for (const tc of toolCalls) {
-          const { query } = tryParse(tc.input_json);
-          setStatus(`searching: ${query}…`, 'busy');
-          let result;
-          try   { result = await webSearch(query); }
-          catch (e) { result = `Search error: ${e.message}`; }
-          toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: result });
-        }
-        history.push({ role: 'user', content: toolResults });
-        // Keep any text already rendered; append a search-status marker then continue streaming
-        const marker = document.createElement('span');
-        marker.className = 'search-marker';
-        marker.textContent = ' [searching…] ';
-        bubble.appendChild(marker);
-        bubble.appendChild(cursor);
-        continue;
-      }
-
-      cursor.remove();
-      // Remove any search-marker spans, then append the final answer after them
-      bubble.querySelectorAll('.search-marker').forEach(n => n.remove());
-      if (out) {
-        const finalNode = document.createElement('span');
-        setRendered(finalNode, renderMarkdown(out));
-        bubble.appendChild(finalNode);
-      }
-      history.push({ role: 'assistant', content: out });
-      setStatus('ok', 'ok');
-      el('token-info').textContent = `in:${inputTk} out:${outputTk}`;
-      break;
+    cursor.remove();
+    if (out) {
+      const finalNode = document.createElement('span');
+      setRendered(finalNode, renderMarkdown(out));
+      bubble.appendChild(finalNode);
     }
+    history.push({ role: 'assistant', content: out });
+    setStatus('ok', 'ok');
+    el('token-info').textContent = `in:${inputTk} out:${outputTk}`;
   } catch (err) {
     cursor.remove();
     bubble.textContent = `Error: ${err.message}`;
@@ -466,8 +422,6 @@ async function send(silent = false) {
     scrollLog();
   }
 }
-
-const tryParse = json => { try { return JSON.parse(json); } catch { return {}; } };
 
 // Open links in a new tab — target="_blank" is blocked in MV3 side panels
 el('log').addEventListener('click', e => {

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-Web AI Agent is a browser-native AI security assistant: a Chrome extension (side panel) backed by a local Python HTTP server (`serve.py`). The extension sends chat through an AI gateway (Bifrost, Portkey, LiteLLM, or Helicone) to Claude, and uses `serve.py` as a CORS proxy for FortiCNAPP security tools and SearXNG web search.
+Web AI Agent is a browser-native AI security assistant: a Chrome extension (side panel) backed by a local Python HTTP server (`serve.py`). The extension sends chat through an AI gateway (Bifrost, Portkey, LiteLLM, or Helicone) to Claude. Web search uses Anthropic's native `web_search_20260209` server-side tool (no local SearXNG instance required). `serve.py` is a CORS proxy for FortiCNAPP security tools; it retains an optional `/search` SearXNG proxy for legacy use.
 
 
 ## Running the backend
@@ -86,7 +86,7 @@ Chrome Extension (extension/)
 
 **`lw_ready` flag** — `serve.py` checks at startup whether `~/.lacework.toml` contains all three fields (`account`, `api_key`, `api_secret`). The result is returned in `GET /config`. `panel.js` reads this flag on load and greys out the CodeSec, Compliance, LQL, and CVE toolbar buttons if credentials are absent.
 
-**Web search fallback** — The extension tries `localhost:8080` (Docker SearXNG) directly first with a 4-second timeout, then falls back to `localhost:8765/search` (serve.py proxy). Search is only offered to the AI model when `SEARXNG_URL` is non-empty.
+**Web search** — The extension declares Anthropic's `web_search_20260209` server-side tool on every chat request. Claude searches the web automatically during inference on Anthropic's infrastructure — no local SearXNG or client-side tool loop is needed. The `/search` endpoint and `SEARXNG_URL` in `serve.py` remain as optional legacy infrastructure.
 
 **Compliance PDF text extraction** — `/compliance/latest-text` uses `pdftotext` (poppler-utils) if it is on `PATH`; otherwise it returns base64 for client-side fallback. The PDF is held in process memory only (`_last_compliance_pdf` dict); it is lost on server restart.
 
