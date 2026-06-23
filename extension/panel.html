@@ -412,7 +412,88 @@ body {
 
 /* ── LQL drawer ──────────────────────────────────────────────────────────── */
 #lql-panel .drawer-header { color: var(--accent); }
-#lql-results pre, #lql-gen-preview pre {
+
+/* LQL HTML table */
+.lql-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0;
+}
+
+.lql-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  font-family: var(--mono);
+  line-height: 1.45;
+}
+
+.lql-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface3);
+  color: var(--dim);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  font-size: 9.5px;
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.lql-table tbody tr:nth-child(even) { background: var(--surface2); }
+.lql-table tbody tr:hover { background: var(--accent-bg); }
+
+.lql-table tbody td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: top;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lql-table tbody tr:last-child td { border-bottom: none; }
+
+.lql-table a.lql-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+.lql-table a.lql-link:hover { text-decoration: underline; }
+
+.lql-export-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0 7px;
+}
+
+.lql-export-btn {
+  font: 600 10px/1 var(--sans);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  background: var(--surface2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.lql-export-btn:hover { background: var(--surface3); color: var(--text); }
+
+.lql-row-note {
+  font-size: 10px;
+  color: var(--dim);
+  font-style: italic;
+}
+
+#lql-gen-preview pre {
   font-family: var(--mono);
   font-size: 10.5px;
   white-space: pre;

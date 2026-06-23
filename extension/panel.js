@@ -1233,32 +1233,18 @@ el('lql-run').addEventListener('click', async () => {
     setStatus(`LQL: ${count} rows`, 'ok');
 
     if (!rows.length) {
-      resultsEl.innerHTML = '<pre>No results.</pre>';
+      resultsEl.innerHTML = '<div class="lql-row-note" style="padding:8px 2px">No results.</div>';
       return;
     }
 
-    // Render as a plain-text aligned table
+    renderLqlTable(resultsEl, rows, total, query.id);
+
+    // Plain-text summary for AI context
     const keys   = Object.keys(rows[0]);
-    const widths = Object.fromEntries(keys.map(k => [k, k.length]));
-    rows.forEach(r => keys.forEach(k => {
-      widths[k] = Math.max(widths[k], String(r[k] ?? '').length);
-    }));
-    const pad = (s, w) => String(s ?? '').padEnd(w);
-    const header = keys.map(k => pad(k, widths[k])).join('  ');
-    const sep    = keys.map(k => '-'.repeat(widths[k])).join('  ');
-    const body   = rows.slice(0, 200).map(r =>
-      keys.map(k => pad(r[k], widths[k])).join('  ')
-    ).join('\n');
-    const note = rows.length > 200 ? `\n… ${rows.length - 200} more rows` : '';
-
-    const pre = document.createElement('pre');
-    pre.textContent = `${header}\n${sep}\n${body}${note}`;
-    resultsEl.appendChild(pre);
-
-    // Also push a summary into chat context
+    const sample = rows.slice(0, 50).map(r => keys.map(k => `${k}=${r[k] ?? ''}`).join(' | ')).join('\n');
     history.push({
       role: 'user',
-      content: `I ran LQL query "${query.id}" and got ${count} rows. Here are the results:\n\n${header}\n${sep}\n${body}${note}\n\nAnalyse these findings.`,
+      content: `I ran LQL query "${query.id}" and got ${count} rows. Here is a sample:\n\n${sample}\n\nAnalyse these findings.`,
     });
     history.push({ role: 'assistant', content: 'Results loaded.' });
     appendTurn('system', `🔍 LQL "${query.id}" — ${count} rows loaded into context`);
@@ -1359,30 +1345,17 @@ el('lql-gen-run').addEventListener('click', async () => {
     setStatus(`LQL: ${count} rows`, 'ok');
 
     if (!rows.length) {
-      resultsEl.innerHTML = '<pre>No results.</pre>';
+      resultsEl.innerHTML = '<div class="lql-row-note" style="padding:8px 2px">No results.</div>';
       return;
     }
 
+    renderLqlTable(resultsEl, rows, total, el('lql-objective').value || 'generated');
+
     const keys   = Object.keys(rows[0]);
-    const widths = Object.fromEntries(keys.map(k => [k, k.length]));
-    rows.forEach(r => keys.forEach(k => {
-      widths[k] = Math.max(widths[k], String(r[k] ?? '').length);
-    }));
-    const pad    = (s, w) => String(s ?? '').padEnd(w);
-    const header = keys.map(k => pad(k, widths[k])).join('  ');
-    const sep    = keys.map(k => '-'.repeat(widths[k])).join('  ');
-    const body   = rows.slice(0, 200).map(r =>
-      keys.map(k => pad(r[k], widths[k])).join('  ')
-    ).join('\n');
-    const note = rows.length > 200 ? `\n… ${rows.length - 200} more rows` : '';
-
-    const pre = document.createElement('pre');
-    pre.textContent = `${header}\n${sep}\n${body}${note}`;
-    resultsEl.appendChild(pre);
-
+    const sample = rows.slice(0, 50).map(r => keys.map(k => `${k}=${r[k] ?? ''}`).join(' | ')).join('\n');
     history.push({
       role: 'user',
-      content: `I generated and ran an LQL query for "${el('lql-objective').value}" and got ${count} rows:\n\n${header}\n${sep}\n${body}${note}\n\nAnalyse these findings.`,
+      content: `I generated and ran an LQL query for "${el('lql-objective').value}" and got ${count} rows. Here is a sample:\n\n${sample}\n\nAnalyse these findings.`,
     });
     history.push({ role: 'assistant', content: 'Results loaded.' });
     appendTurn('system', `✨ Generated LQL — ${count} rows loaded into context`);
@@ -1395,6 +1368,97 @@ el('lql-gen-run').addEventListener('click', async () => {
     btn.disabled = false;
   }
 });
+
+// ── LQL table renderer ───────────────────────────────────────────────────────
+function renderLqlTable(containerEl, rows, totalRows, queryLabel) {
+  containerEl.innerHTML = '';
+
+  const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const URL_RE = /^https?:\/\/\S+$/;
+
+  const keys = Object.keys(rows[0]);
+  const displayed = rows.slice(0, 200);
+
+  // Export bar
+  const bar = document.createElement('div');
+  bar.className = 'lql-export-bar';
+
+  const note = document.createElement('span');
+  note.className = 'lql-row-note';
+  note.textContent = totalRows > displayed.length
+    ? `${displayed.length} of ${totalRows} rows`
+    : `${rows.length} row${rows.length !== 1 ? 's' : ''}`;
+  bar.appendChild(note);
+
+  const csvBtn = document.createElement('button');
+  csvBtn.className = 'lql-export-btn';
+  csvBtn.textContent = '⬇ CSV';
+  csvBtn.addEventListener('click', () => {
+    const lines = [keys.join(',')];
+    rows.forEach(r => lines.push(keys.map(k => {
+      const v = String(r[k] ?? '');
+      return v.includes(',') || v.includes('"') ? `"${v.replace(/"/g,'""')}"` : v;
+    }).join(',')));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `${queryLabel || 'lql'}.csv`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  });
+  bar.appendChild(csvBtn);
+  containerEl.appendChild(bar);
+
+  // Table
+  const wrap  = document.createElement('div');
+  wrap.className = 'lql-table-wrap';
+  const table = document.createElement('table');
+  table.className = 'lql-table';
+
+  // Header
+  const thead = document.createElement('thead');
+  const hrow  = document.createElement('tr');
+  keys.forEach(k => {
+    const th = document.createElement('th');
+    th.textContent = k;
+    hrow.appendChild(th);
+  });
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+
+  // Body
+  const tbody = document.createElement('tbody');
+  displayed.forEach(r => {
+    const tr = document.createElement('tr');
+    keys.forEach(k => {
+      const td  = document.createElement('td');
+      const val = String(r[k] ?? '');
+      if (URL_RE.test(val)) {
+        const a = document.createElement('a');
+        a.className = 'lql-link';
+        a.href = val; a.target = '_blank'; a.rel = 'noopener';
+        a.textContent = val;
+        td.appendChild(a);
+      } else {
+        td.textContent = val;
+      }
+      td.title = val; // full value on hover
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  containerEl.appendChild(wrap);
+
+  if (rows.length > 200) {
+    const more = document.createElement('div');
+    more.className = 'lql-row-note';
+    more.style.padding = '5px 2px';
+    more.textContent = `… ${rows.length - 200} more rows not shown`;
+    containerEl.appendChild(more);
+  }
+}
 
 // ── enter key on objective input triggers build ────────────────────────────
 el('lql-objective').addEventListener('keydown', e => {
