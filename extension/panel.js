@@ -636,7 +636,7 @@ function severityOrder(s) {
   return { critical: 0, high: 1, medium: 2, low: 3, info: 4 }[s?.toLowerCase()] ?? 5;
 }
 
-function renderCodeSecResults(data, mode, ghCtx) {
+function renderCodeSecResults(data, mode, ghCtx, scannedFiles) {
   const panel = el('codesec-panel');
   const body  = el('codesec-body');
   el('codesec-panel-title').textContent = mode === 'sbom' ? '📦 FortiCNAPP SBOM' : '🛡 FortiCNAPP CodeSec';
@@ -756,6 +756,37 @@ function renderCodeSecResults(data, mode, ghCtx) {
           locHtml +
           (fixStr   ? `<span class="cs-sub"> → fix: ${esc(fixStr)}</span>` : '') +
         `</div>`;
+
+      // Fix button — send finding + file content to chat
+      const fixBtn = document.createElement('button');
+      fixBtn.className = 'cs-fix-btn';
+      fixBtn.textContent = '✦ Fix';
+      fixBtn.title = 'Ask Claude to propose a fix for this finding';
+      fixBtn.addEventListener('click', () => {
+        const base      = (f.file || '').split('/').pop();
+        const fileEntry = scannedFiles?.find(sf =>
+          (sf.path || sf.filename || '').endsWith(f.file || '') ||
+          (sf.filename || '') === base
+        );
+        const codeBlock = fileEntry
+          ? `\`\`\`\n// ${fileEntry.path || fileEntry.filename}\n${fileEntry.code}\n\`\`\``
+          : '';
+        const prompt =
+          `Fix the following ${f._cat} finding using best practices.\n\n` +
+          `**${rawDesc}**${idStr ? ` [${idStr}]` : ''}\n` +
+          (locLabel ? `Location: \`${locLabel}\`\n` : '') +
+          (fixStr   ? `Suggested fix version: ${fixStr}\n` : '') +
+          (f.fix    ? `Remediation hint: ${f.fix}\n` : '') +
+          (codeBlock ? `\n${codeBlock}` : '\n(file content unavailable)') +
+          `\n\nProvide the corrected code only, with a brief explanation of what changed and why.`;
+
+        el('codesec-panel').classList.remove('open');
+        el('prompt').value = prompt;
+        resizePrompt();
+        el('prompt').focus();
+        send();
+      });
+      row.appendChild(fixBtn);
       body.appendChild(row);
     });
   });
@@ -790,7 +821,7 @@ async function runCodeSec(mode) {
     });
     if (!res.ok) throw new Error(`Scan endpoint returned ${res.status}`);
     const data = await res.json();
-    renderCodeSecResults(data, mode, ghCtx);
+    renderCodeSecResults(data, mode, ghCtx, files);
 
     if (mode !== 'sbom') {
       const total = (data.vulns?.length || 0) + (data.weaknesses?.length || 0) + (data.secrets?.length || 0);

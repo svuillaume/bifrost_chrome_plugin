@@ -352,12 +352,25 @@ body {
 .cs-section-title:first-child { margin-top: 0; }
 .cs-row {
   display: grid;
-  grid-template-columns: 56px 1fr;
+  grid-template-columns: 56px 1fr auto;
   gap: 3px 8px;
   padding: 4px 0;
   border-bottom: 1px solid var(--border);
   line-height: 1.5;
+  align-items: start;
 }
+.cs-fix-btn {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 3px;
+  font-size: 9px;
+  padding: 1px 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+.cs-fix-btn:hover { background: var(--accent); color: #fff; }
 .cs-row:last-child { border-bottom: none; }
 .cs-sev {
   font-weight: 700;
