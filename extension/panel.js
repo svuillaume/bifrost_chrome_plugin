@@ -152,12 +152,23 @@ async function autoFillFromConfig() {
   }
 }
 
-appendTurn('ai', `**Web AI Agent** — AI chat + FortiCNAPP security tools in your browser.
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
+chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }, ({ email }) => {
+  const firstName = email ? email.split('@')[0].split('.')[0] : '';
+  const name = firstName ? `, ${firstName.charAt(0).toUpperCase() + firstName.slice(1)}` : '';
+  appendTurn('ai', `**${greeting()}${name}!** — AI chat + FortiCNAPP security tools in your browser.
 
 • 📄 **Read** / **TL;DR** — load or summarise the current page
 • 🔰 **FortiCNAPP** dropdown → Scan code, run compliance reports, search CVEs, run LQL queries
 
 Type anything to start.`);
+});
 
 const saveSession = (key, input) => {
   const v = input.value.trim();

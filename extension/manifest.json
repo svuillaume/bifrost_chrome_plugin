@@ -3,7 +3,7 @@
   "name": "Web AI Agent",
   "version": "2.0",
   "description": "Secure AI chat side panel — Web AI Agent",
-  "permissions": ["storage", "sidePanel", "tabs", "activeTab", "scripting"],
+  "permissions": ["storage", "sidePanel", "tabs", "activeTab", "scripting", "identity"],
   "host_permissions": ["https://*/*", "http://localhost/*"],
   "content_security_policy": {
     "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src https://api.github.com https://raw.githubusercontent.com https: http://localhost:45321; img-src 'self' data:"
