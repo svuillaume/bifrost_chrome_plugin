@@ -159,8 +159,24 @@ function greeting() {
   return 'Good evening';
 }
 
-chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }, ({ email }) => {
-  const firstName = email ? email.split('@')[0].split('.')[0] : '';
+async function showGreeting() {
+  // Try Chrome identity first (signed-in Google account)
+  const email = await new Promise(resolve =>
+    chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }, ({ email }) => resolve(email || ''))
+  );
+  let firstName = email ? email.split('@')[0].split('.')[0] : '';
+
+  // Fall back to OS username from serve.py /config
+  if (!firstName) {
+    try {
+      const r = await fetch(`${BASE_URL}/config`);
+      if (r.ok) {
+        const cfg = await r.json();
+        if (cfg.user_name) firstName = cfg.user_name;
+      }
+    } catch { /* serve.py not running */ }
+  }
+
   const name = firstName ? `, ${firstName.charAt(0).toUpperCase() + firstName.slice(1)}` : '';
   appendTurn('ai', `**${greeting()}${name}!** — I'm your Web AI chat Assistant - I also provide FortiCNAPP security tools in your browser.
 
@@ -168,7 +184,8 @@ chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }, ({ email }) => {
 • 🔰 **FortiCNAPP** dropdown → Scan code, run compliance reports, search CVEs, run LQL queries
 
 Type anything to start.`);
-});
+}
+showGreeting();
 
 const saveSession = (key, input) => {
   const v = input.value.trim();
