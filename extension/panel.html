@@ -726,6 +726,37 @@ a.ext-link {
 }
 a.ext-link:hover { color: var(--accent-d); }
 
+/* ── Feature result card (CodeSec / CVE / LQL injected into log) ─────────── */
+.result-card {
+  margin: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface2);
+  animation: fadein .15s ease;
+}
+.result-card-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  background: var(--surface3);
+  border-bottom: 1px solid var(--border);
+}
+.result-card-icon { font-size: 13px; }
+.result-card-title { color: var(--text); font-size: 12px; font-weight: 600; }
+.cs-result-body, .cve-result-body, .lql-result-body {
+  padding: 8px 12px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.cs-result-body::-webkit-scrollbar,
+.cve-result-body::-webkit-scrollbar,
+.lql-result-body::-webkit-scrollbar { width: 3px; }
+.cs-result-body::-webkit-scrollbar-thumb,
+.cve-result-body::-webkit-scrollbar-thumb,
+.lql-result-body::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
+
 /* ── GitHub scan card ────────────────────────────────────────────────────── */
 .gh-card {
   margin: 4px 10px;

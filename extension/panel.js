@@ -617,6 +617,17 @@ async function fetchGithubRepoFiles(owner, repo) {
   return { files, owner, repo, branch };
 }
 
+function appendResultCard(icon, title, contentEl) {
+  const card = document.createElement('div');
+  card.className = 'result-card';
+  const hdr = document.createElement('div');
+  hdr.className = 'result-card-header';
+  hdr.innerHTML = `<span class="result-card-icon">${icon}</span><span class="result-card-title">${title}</span>`;
+  card.append(hdr, contentEl);
+  el('log').appendChild(card);
+  scrollLog();
+}
+
 function appendGithubCard(owner, repo, branch, files) {
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const repoUrl = `https://github.com/${owner}/${repo}`;
@@ -706,15 +717,15 @@ function severityOrder(s) {
 }
 
 function renderCodeSecResults(data, mode, ghCtx, scannedFiles) {
-  const panel = el('codesec-panel');
-  const body  = el('codesec-body');
-  el('codesec-panel-title').textContent = mode === 'sbom' ? '📦 FortiCNAPP SBOM' : '🛡 FortiCNAPP CodeSec';
-  panel.classList.add('open');
-  body.innerHTML = '';
+  // Close the drawer and render results into the chat log
+  el('codesec-panel').classList.remove('open');
+  const body = document.createElement('div');
+  body.className = 'cs-result-body';
 
   if (mode === 'sbom') {
     if (data.error) {
       body.innerHTML = `<div class="cs-empty" style="color:var(--err)">${data.error}</div>`;
+      appendResultCard('📦', 'FortiCNAPP SBOM', body);
       return;
     }
     const components = data.components || [];
@@ -746,6 +757,7 @@ function renderCodeSecResults(data, mode, ghCtx, scannedFiles) {
       empty.className = 'cs-empty';
       empty.textContent = 'No packages detected in page code snippets.';
       body.appendChild(empty);
+      appendResultCard('📦', 'FortiCNAPP SBOM', body);
       return;
     }
     const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -766,6 +778,7 @@ function renderCodeSecResults(data, mode, ghCtx, scannedFiles) {
       more.textContent = `… and ${components.length - 50} more components`;
       body.appendChild(more);
     }
+    appendResultCard('📦', 'FortiCNAPP SBOM', body);
     return;
   }
 
@@ -781,6 +794,7 @@ function renderCodeSecResults(data, mode, ghCtx, scannedFiles) {
     ok.className = 'cs-empty';
     ok.textContent = '✓ No vulnerabilities, weaknesses, or secrets detected.';
     body.appendChild(ok);
+    appendResultCard('🛡', 'FortiCNAPP CodeSec', body);
     return;
   }
 
@@ -881,6 +895,7 @@ function renderCodeSecResults(data, mode, ghCtx, scannedFiles) {
     warn.textContent = `Scanner warning: ${data.stderr}`;
     body.appendChild(warn);
   }
+  appendResultCard('🛡', 'FortiCNAPP CodeSec', body);
 }
 
 async function runCodeSec(mode) {
@@ -1161,6 +1176,7 @@ async function runCveSearch() {
       return;
     }
 
+    el('cve-panel').classList.remove('open');
     renderCveResults(data);
 
     const exp = data.internet_exposed;
@@ -1179,8 +1195,8 @@ async function runCveSearch() {
 }
 
 function renderCveResults(data) {
-  const resultsEl = el('cve-results');
-  resultsEl.innerHTML = '';
+  const resultsEl = document.createElement('div');
+  resultsEl.className = 'cve-result-body';
 
   const summary = document.createElement('div');
   summary.className   = 'cve-summary';
@@ -1267,6 +1283,7 @@ function renderCveResults(data) {
     card.appendChild(body);
     resultsEl.appendChild(card);
   });
+  appendResultCard('🔬', `CVE ${data.cveId}`, resultsEl);
 }
 
 // ── FortiCNAPP LQL ───────────────────────────────────────────────────────────
@@ -1321,12 +1338,12 @@ el('lql-run').addEventListener('click', async () => {
   const query     = _lqlQueries[Number(idx)];
   const btn       = el('lql-run');
   const statusEl  = el('lql-status');
-  const resultsEl = el('lql-results');
+  const _oldResultsEl = el('lql-results');
 
-  btn.disabled         = true;
-  statusEl.textContent = 'running…';
-  statusEl.className   = '';
-  resultsEl.innerHTML  = '';
+  btn.disabled            = true;
+  statusEl.textContent    = 'running…';
+  statusEl.className      = '';
+  _oldResultsEl.innerHTML = '';
   setStatus('running LQL…', 'busy');
 
   try {
@@ -1348,12 +1365,18 @@ el('lql-run').addEventListener('click', async () => {
     statusEl.className = count ? 'ok' : '';
     setStatus(`LQL: ${count} rows`, 'ok');
 
+    el('lql-panel').classList.remove('open');
+    const resultsEl = document.createElement('div');
+    resultsEl.className = 'lql-result-body';
+
     if (!rows.length) {
       resultsEl.innerHTML = '<div class="lql-row-note" style="padding:8px 2px">No results.</div>';
+      appendResultCard('📊', `LQL: ${query.id}`, resultsEl);
       return;
     }
 
     renderLqlTable(resultsEl, rows, total, query.id);
+    appendResultCard('📊', `LQL: ${query.id} — ${statusEl.textContent}`, resultsEl);
 
     // Plain-text summary for AI context
     const keys   = Object.keys(rows[0]);
@@ -1363,12 +1386,11 @@ el('lql-run').addEventListener('click', async () => {
       content: `I ran LQL query "${query.id}" and got ${count} rows. Here is a sample:\n\n${sample}\n\nAnalyse these findings.`,
     });
     history.push({ role: 'assistant', content: 'Results loaded.' });
-    appendTurn('system', `🔍 LQL "${query.id}" — ${count} rows loaded into context`);
   } catch (e) {
     statusEl.textContent = `✗ ${e.message}`;
     statusEl.className   = 'err';
     setStatus('LQL error', 'err');
-    resultsEl.innerHTML  = `<pre style="color:var(--err)">${e.message}</pre>`;
+    _oldResultsEl.innerHTML = `<pre style="color:var(--err)">${e.message}</pre>`;
   } finally {
     btn.disabled = false;
   }
