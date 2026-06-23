@@ -587,6 +587,7 @@ body {
 /* ── Chat log ────────────────────────────────────────────────────────────── */
 #log {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -709,6 +710,7 @@ a.ext-link:hover { color: var(--accent-d); }
   background: var(--surface);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+  min-height: 0;
 }
 #prompt {
   flex: 1;
@@ -754,6 +756,7 @@ a.ext-link:hover { color: var(--accent-d); }
   color: var(--dim);
   background: var(--surface);
   border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 </style>
 </head>
