@@ -1,4 +1,4 @@
-# Web Agent AI Assistant — Chrome Extension
+#  Web AI Agent — Chrome Extension
 
 A Chrome side-panel extension that brings **AI GW** and **FortiCNAPP** security tools directly into your browser.
 
@@ -31,11 +31,11 @@ All traffic stays local or goes to your own gateway — nothing is sent to third
 
 ---
 
-## Part 1 — AI Chat (Bifrost)
+## Part 1 —  Web AI Agent
 
 ### What it does
 
-The chat panel connects to Claude through your Bifrost AI gateway. It supports streaming responses, markdown rendering, page reading, and TL;DR summarization of any open tab.
+The chat panel connects to LLM Provider Models through your AI gateway. It supports streaming responses, markdown rendering, page reading, and TL;DR summarization of any open tab.
 
 ### Step 1 — Configure your credentials
 
@@ -46,8 +46,8 @@ cp .env.tpl .env
 Edit `.env` with your values:
 
 ```
-ANTHROPIC_BASE_URL=https://your-bifrost-endpoint/anthropic
-BIFROST_VIRTUAL_KEY=sk-bf-your-virtual-key-here
+ANTHROPIC_BASE_URL=https://your-AI Gateway-endpoint/anthropic
+AI Gateway_VIRTUAL_KEY=sk-bf-your-virtual-key-here
 ANTHROPIC_DEFAULT_MODEL=claude-haiku-4-5-20251001
 SEARXNG_URL=http://localhost:8080
 ```
@@ -187,7 +187,7 @@ The Compliance feature calls the FortiCNAPP API directly — no lacework CLI nee
 
 | What | Storage | Lifetime |
 |------|---------|----------|
-| Bifrost URL | `chrome.storage.session` (RAM) | Cleared on Chrome close |
+| AI Gateway URL | `chrome.storage.session` (RAM) | Cleared on Chrome close |
 | API key | `chrome.storage.session` (RAM) | Cleared on Chrome close |
 | Model choice | `chrome.storage.local` (disk) | Persists (not sensitive) |
 | Chat history | JS memory | Cleared on panel close |
