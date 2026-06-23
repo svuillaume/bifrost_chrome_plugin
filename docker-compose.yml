@@ -1,7 +1,7 @@
 services:
   searxng:
     image: searxng/searxng:latest
-    container_name: bifrost-search
+    container_name: webai-search
     ports:
       - "8080:8080"
     volumes:
@@ -10,7 +10,7 @@ services:
 
   bifrost:
     build: .
-    container_name: bifrost-serve
+    container_name: webai-serve
     ports:
       - "8765:8765"
     env_file:
