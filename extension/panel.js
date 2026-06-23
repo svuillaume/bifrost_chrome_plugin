@@ -762,7 +762,7 @@ async function runCodeSec(mode) {
       return;
     }
 
-    const res = await fetch(`BASE_URL + '/${mode === 'sbom' ? 'sbom' : 'codesec'}`, {
+    const res = await fetch(`${BASE_URL}/${mode === 'sbom' ? 'sbom' : 'codesec'}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ files }),
