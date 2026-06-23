@@ -19,7 +19,7 @@ Only Docker needs to be installed — lacework CLI + SCA component are baked int
 
 **Alternative — Python directly (macOS dev only, lacework CLI must be installed locally):**
 ```bash
-python3 serve.py              # http://localhost:8765
+python3 serve.py              # http://localhost:45321
 ```
 
 `serve.py` is pure Python stdlib — no pip install needed.
@@ -52,7 +52,7 @@ Chrome Extension (extension/)
   ├─ Chat ──────────► AI Gateway (Bifrost / Portkey / LiteLLM / Helicone)
   │                        └──► Claude API  (web search runs server-side)
   │
-  └─ Security tools ► serve.py  localhost:8765
+  └─ Security tools ► serve.py  localhost:45321
                            ├──► FortiCNAPP REST API  (via lacework CLI)
                            └──► lacework CLI  (SCA/SAST, SBOM)
 ```
@@ -102,10 +102,10 @@ Chrome Extension (extension/)
 2. **Load unpacked** → select the `extension/` folder
 3. Click toolbar icon to open the side panel
 
-The extension reads its initial config from `GET /config` on `localhost:8765`.
+The extension reads its initial config from `GET /config` on `localhost:45321`.
 
 ## Key constraints
 
 - `serve.py` must remain zero-dependency (Python stdlib only). No pip installs.
 - The Dockerfile installs the lacework CLI via its install script during build — lacework SCA component is pre-installed to avoid download delays at runtime.
-- The extension's CSP (`manifest.json`) restricts `connect-src` to `localhost:8765`, `https://api.github.com`, `https://raw.githubusercontent.com`, and `https://*` — any new fetch target must be added there.
+- The extension's CSP (`manifest.json`) restricts `connect-src` to `localhost:45321`, `https://api.github.com`, `https://raw.githubusercontent.com`, and `https://*` — any new fetch target must be added there.

@@ -144,7 +144,7 @@ $proc.Id | Out-File ".serve.pid" -Encoding ascii
 Write-Host "  Waiting for server" -NoNewline
 for ($i = 0; $i -lt 20; $i++) {
     try {
-        $r = Invoke-WebRequest "http://localhost:8765/config" -UseBasicParsing -TimeoutSec 2
+        $r = Invoke-WebRequest "http://localhost:45321/config" -UseBasicParsing -TimeoutSec 2
         if ($r.StatusCode -eq 200) { Write-Host " OK"; break }
     } catch {}
     Write-Host "." -NoNewline
@@ -155,7 +155,7 @@ for ($i = 0; $i -lt 20; $i++) {
 Write-Host ""
 Write-Host "  [OK] Web AI Agent ready!" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Chatbox  ->  http://localhost:8765"
+Write-Host "  Chatbox  ->  http://localhost:45321"
 Write-Host "  Log      ->  .\serve.log"
 Write-Host "  Stop     ->  Stop-Process -Id $(Get-Content .serve.pid)"
 Write-Host ""

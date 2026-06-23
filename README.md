@@ -122,7 +122,7 @@ Just run `./setup.sh` (or `.\setup.ps1`) again.
 ## Troubleshooting
 
 **The side panel says "not connected" or buttons are greyed out**
-- Make sure the server is running — open `http://localhost:8765` in Chrome; you should see a chat page
+- Make sure the server is running — open `http://localhost:45321` in Chrome; you should see a chat page
 - If it's not running, open Terminal / PowerShell in the extension folder and run `./setup.sh` again
 
 **"Cannot scan a browser page" when clicking Scan**
@@ -164,7 +164,7 @@ The small server (`serve.py`) only listens on your own computer (`localhost`) �
 
 ```bash
 cp .env.tpl .env        # fill in ANTHROPIC_BASE_URL and BIFROST_VIRTUAL_KEY
-python3 serve.py        # starts on http://localhost:8765
+python3 serve.py        # starts on http://localhost:45321
 ```
 
 ### Configuration keys (`.env`)

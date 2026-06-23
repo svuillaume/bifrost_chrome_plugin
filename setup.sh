@@ -134,7 +134,7 @@ echo $! > .serve.pid
 
 echo -n "  Waiting for server"
 for i in $(seq 1 20); do
-  if curl -s "http://localhost:8765/config" >/dev/null 2>&1; then
+  if curl -s "http://localhost:45321/config" >/dev/null 2>&1; then
     echo " ✓"
     break
   fi
@@ -146,7 +146,7 @@ done
 echo ""
 echo -e "  ${GREEN}✔ Web AI Agent ready!${NC}"
 echo ""
-echo "  Chatbox  →  http://localhost:8765"
+echo "  Chatbox  →  http://localhost:45321"
 echo "  Log      →  ./serve.log   (tail -f serve.log)"
 echo "  Stop     →  kill \$(cat .serve.pid)"
 echo ""

@@ -14,12 +14,12 @@ POST /lql/run       → execute LQL against FortiCNAPP
 POST /lql/cve       → CVE attack surface: hosts + containers
 POST /lql/generate  → plain-English → LQL via Claude
 
-Usage: python3 serve.py  →  http://localhost:8765
+Usage: python3 serve.py  →  http://localhost:45321
 """
 import base64, http.server, json, os, shutil, socketserver, subprocess, tempfile, urllib.parse, urllib.request, urllib.error
 from datetime import datetime, timezone, timedelta
 
-PORT      = 8765
+PORT      = 45321
 DIR       = os.path.dirname(os.path.abspath(__file__))
 
 # Last compliance PDF cache: {'name': str, 'bytes': bytes}
@@ -1096,6 +1096,17 @@ print(f'Web AI Agent  →  http://localhost:{PORT}')
 print(f'Gateway       →  {UPSTREAM.rstrip("/")}/v1/*  key:{"ok" if VIRTUAL_KEY else "MISSING"}')
 print(f'FortiCNAPP    →  creds:{"ok" if LW_READY else "MISSING"}  cli:{"ok" if LW_AVAILABLE else "not found"}')
 print(f'LQL dir       →  {LQL_QUERIES_DIR or "not set"}')
+
+import socket as _socket
+def _port_open(port):
+    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+        return s.connect_ex(('127.0.0.1', port)) == 0
+
+if _port_open(PORT):
+    print(f'ERROR: port {PORT} is already in use — stop the existing process first')
+    print(f'  macOS/Linux: kill $(lsof -ti:{PORT})')
+    print(f'  Windows:     Stop-Process -Id (Get-NetTCPConnection -LocalPort {PORT}).OwningProcess')
+    raise SystemExit(1)
 
 socketserver.TCPServer.allow_reuse_address = True
 with socketserver.TCPServer(('', PORT), Handler) as httpd:

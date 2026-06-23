@@ -1,6 +1,7 @@
 'use strict';
 
 // ── Constants ─────────────────────────────────────────────────────────────
+const BASE_URL       = 'http://localhost:45321';
 const MAX_TOKENS     = 4096;
 const PAGE_MAX_CHARS = 12000;
 const SYSTEM_PROMPT  = 'Be concise. No filler phrases.';
@@ -103,7 +104,7 @@ el('gateway').addEventListener('change', () => {
 async function autoFillFromConfig() {
   let cfg = null;
   try {
-    const res = await fetch('http://localhost:8765/config');
+    const res = await fetch(BASE_URL + '/config');
     if (res.ok) cfg = await res.json();
   } catch { /* serve.py not running */ }
 
@@ -750,7 +751,7 @@ async function runCodeSec(mode) {
       return;
     }
 
-    const res = await fetch(`http://localhost:8765/${mode === 'sbom' ? 'sbom' : 'codesec'}`, {
+    const res = await fetch(`BASE_URL + '/${mode === 'sbom' ? 'sbom' : 'codesec'}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ files }),
@@ -799,7 +800,7 @@ async function loadComplianceReports() {
   sel.innerHTML = '<option value="">Loading…</option>';
   sel.disabled = true;
   try {
-    const res  = await fetch('http://localhost:8765/compliance/list');
+    const res  = await fetch(BASE_URL + '/compliance/list');
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     const frameworks = data.frameworks || [];
@@ -852,7 +853,7 @@ async function runComplianceReport() {
   setStatus('generating compliance PDF…', 'busy');
 
   try {
-    const res = await fetch('http://localhost:8765/compliance', {
+    const res = await fetch(BASE_URL + '/compliance', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ frameworkGuid: fw.guid, frameworkName: fw.name, clouds: fw.clouds }),
@@ -1005,7 +1006,7 @@ async function runCveSearch() {
   setStatus(`CVE lookup: ${cveId}…`, 'busy');
 
   try {
-    const res = await fetch('http://localhost:8765/lql/cve', {
+    const res = await fetch(BASE_URL + '/lql/cve', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ cveId, days: Number(el('cve-days').value) }),
@@ -1156,7 +1157,7 @@ async function loadLqlQueries() {
   statusEl.textContent = '';
   statusEl.className   = '';
   try {
-    const res  = await fetch('http://localhost:8765/lql/queries');
+    const res  = await fetch(BASE_URL + '/lql/queries');
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     _lqlQueries = data.queries || [];
@@ -1192,7 +1193,7 @@ el('lql-run').addEventListener('click', async () => {
   setStatus('running LQL…', 'busy');
 
   try {
-    const res = await fetch('http://localhost:8765/lql/run', {
+    const res = await fetch(BASE_URL + '/lql/run', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ queryText: query.queryText }),
@@ -1267,7 +1268,7 @@ el('lql-gen-btn').addEventListener('click', async () => {
   _genQueryText        = '';
 
   try {
-    const res  = await fetch('http://localhost:8765/lql/generate', {
+    const res  = await fetch(BASE_URL + '/lql/generate', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ objective }),
@@ -1316,7 +1317,7 @@ el('lql-gen-run').addEventListener('click', async () => {
   setStatus('running LQL…', 'busy');
 
   try {
-    const res  = await fetch('http://localhost:8765/lql/run', {
+    const res  = await fetch(BASE_URL + '/lql/run', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ queryText: _genQueryText }),
@@ -1458,7 +1459,7 @@ el('lql-objective').addEventListener('keydown', e => {
 async function loadCompliancePdfText(reportName) {
   appendTurn('system', `📖 Loading "${reportName}" into context…`);
   try {
-    const res  = await fetch('http://localhost:8765/compliance/latest-text');
+    const res  = await fetch(BASE_URL + '/compliance/latest-text');
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
