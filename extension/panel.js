@@ -1239,11 +1239,9 @@ el('cve-search').addEventListener('click', runCveSearch);
 el('cve-analyse').addEventListener('click', () => {
   if (!_lastCveData) return;
   el('cve-panel').classList.remove('open');
-  const d       = _lastCveData;
-  const exposed = d.hosts.filter(h => h.host_exposed || h.container_exposed);
-  const prompt  = buildCveAnalysisPrompt(d);
+  const prompt = buildCveAnalysisPrompt(_lastCveData);
   history.push({ role: 'user', content: prompt });
-  appendTurn('user', `Analyse attack surface for ${d.cveId}`);
+  appendTurn('user', `Analyse attack surface for ${_lastCveData.cveId}`);
   send(true);
 });
 
@@ -1396,17 +1394,13 @@ async function runCveSearch() {
   const cveId = el('cve-input').value.trim().toUpperCase();
   if (!cveId) return;
 
-  const btn       = el('cve-search');
-  const statusEl  = el('cve-status');
-  const resultsEl = el('cve-results');
-  const analyseBtn = el('cve-analyse');
+  const btn      = el('cve-search');
+  const statusEl = el('cve-status');
 
   btn.disabled         = true;
   statusEl.textContent = 'searching…';
   statusEl.className   = '';
-  resultsEl.innerHTML  = '';
-  analyseBtn.style.display = 'none';
-  _lastCveData = null;
+  _lastCveData         = null;
   setStatus(`CVE lookup: ${cveId}…`, 'busy');
 
   try {
@@ -1420,25 +1414,43 @@ async function runCveSearch() {
 
     _lastCveData = data;
 
+    // Close the drawer before posting results
+    el('cve-panel').classList.remove('open');
+
     if (!data.hosts || !data.hosts.length) {
-      statusEl.textContent = data.note || 'No results';
-      statusEl.className   = '';
+      const noResultEl = document.createElement('div');
+      noResultEl.className = 'cve-summary';
+      noResultEl.textContent = data.note || `No hosts found for ${cveId} in the selected window.`;
+      appendResultCard('🔬', `CVE: ${cveId}`, noResultEl);
       setStatus('—');
       return;
     }
-
-    renderCveResults(data, resultsEl);
 
     const exp = data.internet_exposed;
     statusEl.textContent = `${data.total_affected} hosts  |  ${exp} internet-exposed  |  ${data.fixable} fixable`;
     statusEl.className   = exp ? 'err' : 'ok';
     setStatus(`${cveId}: ${data.total_affected} hosts (${exp} exposed)`, exp ? 'err' : 'ok');
-    analyseBtn.style.display = '';
+
+    // Build detached results and post as a card
+    const resultsEl = document.createElement('div');
+    resultsEl.className = 'cve-result-body';
+    renderCveResults(data, resultsEl);
+    appendResultCard('🔬', `CVE: ${cveId} — ${data.total_affected} hosts (${exp} exposed)`, resultsEl);
+
+    // Auto-trigger executive analysis
+    const prompt = buildCveAnalysisPrompt(data);
+    history.push({ role: 'user', content: prompt });
+    appendTurn('user', `Analyse attack surface for ${cveId}`);
+    send(true);
   } catch (e) {
     statusEl.textContent = `✗ ${e.message}`;
     statusEl.className   = 'err';
     setStatus('CVE error', 'err');
-    resultsEl.innerHTML  = `<div class="cve-summary" style="color:var(--err)">${e.message}</div>`;
+    const errEl = document.createElement('div');
+    errEl.className = 'cve-summary';
+    errEl.style.color = 'var(--err)';
+    errEl.textContent = e.message;
+    appendResultCard('🔬', `CVE: ${cveId} — error`, errEl);
   } finally {
     btn.disabled = false;
   }
