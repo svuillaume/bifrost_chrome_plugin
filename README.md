@@ -1,168 +1,194 @@
 # Web AI Agent — Chrome Extension
 
-> **License**: Apache 2.0 — see [LICENSE](LICENSE) | **Status**: BETA — new features and integrations welcome
+> **License**: Apache 2.0 — see [LICENSE](LICENSE) | **Status**: BETA
 
-A browser-based AI security agent that integrates with any AI Gateway (LLMlite, Portkey, Helicone, …) and any CNAPP platform via the Lacework CLI. Runs as a Chrome side panel — ask questions about any webpage, scan code for vulnerabilities, run cloud security queries, and generate LQL from plain English without leaving your browser.
+A Chrome side panel that brings AI-powered cloud security to your browser. Ask questions about any webpage, scan code for vulnerabilities, run cloud security queries, and analyze threats — all without leaving your browser tab.
 
-> Works with FortiCNAPP (Lacework), or any CNAPP that supports the Lacework CLI and LQL.
-
----
-
-## What it does
-
-**Chat & research** — works on any webpage:
-- Ask the AI anything — it automatically searches the web when needed
-- **Read** — loads the page you're on so you can ask questions about it
-- **TL;DR** — gives a plain-English summary of any page in seconds
-- **FortiGuard** — opens the FortiGuard Labs threat intelligence feed; the button flashes red when there are active outbreak alerts
-
-**FortiCNAPP security tools** — click the 🔰 FortiCNAPP button:
-
-| Tool | What it does |
-|---|---|
-| 🛡 **Scan Code** | Scans code on the current page or a GitHub repo for vulnerabilities and secrets |
-| 📋 **Compliance Report** | Downloads a compliance PDF (CIS, NIST, PCI-DSS, SOC 2, HIPAA, and 50+ more) |
-| 📊 **Advanced Analytics** | Runs saved LQL security queries against your FortiCNAPP account — or describe what you want in plain English and it writes the query for you |
-| 🔬 **Attack Threat Surface** | Look up any CVE and see exactly which servers and containers in your environment are exposed |
-| 💬 **Community Feed** | Opens the FortiCNAPP community blog and articles |
-
-> Greyed-out buttons have a tooltip explaining what's needed to enable them.
+Works with **FortiCNAPP** (and any CNAPP platform built on Lacework).
 
 ---
 
-## Before you start — what you need
+## What does it do?
 
-| What | Where to get it |
+Think of it as a security analyst sitting next to you while you browse. You open a side panel in Chrome, and from there you can:
+
+**General AI assistant (works on any webpage)**
+
+- **Chat** — ask the AI anything; it searches the web automatically when it needs fresh information
+- **Read this page** — loads the page you're on so you can ask questions about it ("summarise this document", "what are the risks mentioned here?")
+- **TL;DR** — get a plain-English summary of any page in seconds
+- **FortiGuard** — opens the live FortiGuard threat intelligence feed; the button flashes red when there are active cybersecurity outbreak alerts
+
+**Cloud security tools (requires FortiCNAPP)**
+
+| Button | What it does |
 |---|---|
-| **Google Chrome** | [chrome.google.com](https://chrome.google.com) |
-| **Python 3** | [python.org](https://python.org) — already installed on most Macs |
-| **AI Gateway URL + key** | Provided by your IT team or Fortinet contact (starts with `sk-bf-…`) |
-| **FortiCNAPP credentials** | Found in FortiCNAPP under **Settings → API Keys** |
+| 🛡 **Scan Code** | Scans code on the current page or a GitHub repo for security vulnerabilities and exposed secrets |
+| 📋 **Compliance** | Generates a compliance PDF report for frameworks like CIS, NIST, PCI-DSS, SOC 2, and HIPAA |
+| 📊 **Advanced Analytics** | Run security queries against your cloud environment — use saved queries or describe what you want in plain English and the AI writes the query for you |
+| 🔬 **Attack Surface** | Look up any CVE and instantly see which servers and containers in your environment are vulnerable — enriched with live FortiGuard outbreak intelligence |
+| 💬 **Community** | Opens the FortiCNAPP community feed for blogs and updates |
 
-You do not need Docker. You do not need to be a developer.
+> If a button is greyed out, hover over it — a tooltip explains exactly what's needed to enable it.
+
+---
+
+## How Attack Surface works
+
+When you search for a CVE (a security vulnerability ID like `CVE-2024-21762`), the tool does two things **at the same time**:
+
+1. **Checks your FortiCNAPP environment** — which of your servers and containers are running software affected by that CVE, how exposed they are to the internet, and whether a fix is available
+2. **Checks FortiGuard Labs** — whether FortiGuard has published an active outbreak alert for that CVE, including attack techniques, severity, and remediation guidance
+
+Both sources are combined and sent to the AI, which writes a full CISO-level security report with prioritised remediation steps and automation scripts.
+
+---
+
+## What you need before starting
+
+| Requirement | Notes |
+|---|---|
+| **Google Chrome** | Any recent version |
+| **Python 3** | Already installed on most Macs. Windows users: download from [python.org](https://python.org) — tick "Add to PATH" during install |
+| **AI Gateway URL + key** | Provided by your IT team or Fortinet contact. The key usually starts with `sk-bf-…` |
+| **FortiCNAPP account** | Only needed for the security tools (Scan Code, Compliance, Analytics, Attack Surface) |
+| **FortiCNAPP API key** | Found in FortiCNAPP under **Settings → API Keys** |
+
+You do **not** need to be a developer. You do **not** need Docker.
 
 ---
 
 ## Setup — 4 steps
 
-### Step 1 — Download the extension
+### Step 1 — Download
 
-**Option A — Git clone (recommended):**
+**Option A — Git (if you have it):**
 ```bash
 git clone https://github.com/svuillaume/webaiagent.git
 cd webaiagent
 ```
 
-**Option B — Download ZIP:**
+**Option B — ZIP download:**
 1. Go to [github.com/svuillaume/webaiagent](https://github.com/svuillaume/webaiagent)
-2. Click **Code → Download ZIP**
-3. Unzip the downloaded file and open a terminal in the extracted folder
+2. Click the green **Code** button → **Download ZIP**
+3. Unzip the file, then open Terminal (Mac) or PowerShell (Windows) inside that folder
 
 ---
 
 ### Step 2 — Run the setup script
 
-Open **Terminal** (macOS/Linux) or **PowerShell** (Windows) in the folder you just downloaded, then run:
+This script installs everything and asks you a few questions.
 
-**macOS / Linux:**
+**Mac / Linux — open Terminal and run:**
 ```
 ./setup.sh
 ```
 
-**Windows:**
+**Windows — open PowerShell and run:**
 ```
 .\setup.ps1
 ```
 
-The script asks you 3 questions:
+The script will walk you through these questions:
 
-1. **Gateway URL** — paste the URL your IT team gave you (e.g. `https://bifrost.yourcompany.com/anthropic`)
-2. **Gateway key** — paste your API key (starts with `sk-bf-…`)
-3. **FortiCNAPP credentials** — answer **y** to set these up now (you'll need your account name, API Key, and API Secret from FortiCNAPP → Settings → API Keys)
+| Question | What to enter |
+|---|---|
+| AI Gateway URL | The URL your IT team gave you (e.g. `https://bifrost.yourcompany.com/anthropic`) |
+| Gateway API key | Your key — starts with `sk-bf-…` |
+| FortiCNAPP credentials | Answer **y** — you'll need your FortiCNAPP account name, API Key ID, and API Secret |
 
-When you see ✔ at the end, the server is running and you're ready for Step 3.
+When the script finishes and shows a green `[OK]`, the server is running and you're ready for Step 3.
 
 ---
 
-### Step 3 — Load the extension in Chrome
+### Step 3 — Load the extension into Chrome
 
-1. Open Chrome and go to: **`chrome://extensions`**
-2. Turn on **Developer mode** — toggle in the top-right corner
+1. Open Chrome and type **`chrome://extensions`** in the address bar
+2. Turn on **Developer mode** — the toggle is in the top-right corner of the page
 3. Click **Load unpacked**
-4. Select the **`extension`** folder inside the folder you downloaded
-5. The Web AI Agent icon (🔰) appears in your Chrome toolbar
+4. Select the **`extension`** folder inside the project folder you downloaded
+5. The Web AI Agent icon appears in your Chrome toolbar (top-right)
+6. **Pin it** for easy access: click the puzzle piece 🧩 icon in the toolbar → click the pin next to Web AI Agent
 
 ---
 
-### Step 4 — Start using it
+### Step 4 — Open and use it
 
-Click the 🔰 icon in the Chrome toolbar — the side panel opens.
-Type anything to start chatting, or use the toolbar buttons.
+Click the Web AI Agent icon in the Chrome toolbar. The side panel opens on the right side of your browser.
 
-✅ **Check:** The status dot in the top-right of the panel should be green. If it's grey, the server isn't running — go back to Step 2.
+- The **status dot** in the top-right of the panel should be **green** — this means the AI is connected and ready
+- Type anything in the chat box to start
+- Click the **🔰 FortiCNAPP** button to access security tools
+
+> If the status dot is grey or red, the server isn't running — go back to Step 2 and run the setup script again.
 
 ---
 
 ## Stopping and restarting
 
-The server runs quietly in the background.
+The server runs quietly in the background after setup.
 
-**To stop:**
-- macOS/Linux: `kill $(cat .serve.pid)`
-- Windows: `Stop-Process -Id (Get-Content .serve.pid)`
+**To stop the server:**
+- Mac/Linux: open Terminal in the project folder and run `kill $(cat .serve.pid)`
+- Windows: open PowerShell in the project folder and run `Stop-Process -Id (Get-Content .serve.pid)`
 
-**To restart:** run `./setup.sh` (or `.\setup.ps1`) again.
+**To start it again:** run `./setup.sh` or `.\setup.ps1` — it skips the configuration questions if your `.env` is already set up.
 
 ---
 
 ## Troubleshooting
 
-**Panel shows "not connected" or status dot is grey**
-→ The server isn't running. Open Terminal in the extension folder and run `./setup.sh` again.
-→ Check it's running: open `http://localhost:45321` in Chrome — you should see a chat page.
+**Status dot is grey — "not connected"**
+→ The server isn't running. Open Terminal/PowerShell in the project folder and run `./setup.sh` (or `.\setup.ps1`) again.
+→ You can verify the server is running by opening `http://localhost:45321` in Chrome — you should see a chat page.
 
-**"Cannot scan a Github web page" when clicking Scan Code**
-→ Navigate to a GitHub repository page first, then click Scan Code.
+**Security tool buttons are greyed out (Compliance, CVE, LQL)**
+→ FortiCNAPP credentials aren't configured. Run the setup script and answer **y** when asked about FortiCNAPP credentials.
 
-**Scan runs but finds nothing**
-→ The page needs visible code — GitHub repository pages work best. On a GitHub repo, it fetches the actual source files automatically.
+**Scan Code button is greyed out**
+→ The lacework CLI isn't installed. Run the setup script and answer **y** when asked to install it.
 
-**LQL / CVE / Compliance buttons are greyed out**
-→ Your FortiCNAPP credentials aren't configured. Run `./setup.sh` and answer **y** when asked about FortiCNAPP.
+**"Cannot scan this page" when clicking Scan Code**
+→ Navigate to a GitHub repository page first, then click Scan Code. It works best on GitHub repo pages.
 
-**Scan Code is greyed out but other buttons work**
-→ The lacework CLI is not installed. Run `./setup.sh` and answer **y** when asked to install it.
+**Attack Surface shows no results for a CVE**
+→ That CVE may not affect any hosts in your monitored environment, or the time window is too short. Try extending the time window (default is 7 days).
 
 **FortiGuard button is flashing red**
-→ There is an active outbreak alert from the last 5 days. Click the button to open FortiGuard Labs — the flashing stops once you've checked it.
+→ FortiGuard Labs has published an active outbreak alert in the last 5 days. Click the button to read it — the flashing stops once you've seen it.
+
+**Windows: script won't run — "execution policy" error**
+→ Open PowerShell as Administrator and run: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
+Then re-run `.\setup.ps1`.
 
 ---
 
-## Privacy & security
+## Privacy and your data
 
-Your keys and credentials stay on your machine — nothing is stored in the cloud.
+Everything stays on your machine.
 
-| Data | Where it's stored | When it's cleared |
+| Data | Where it's stored | Notes |
 |---|---|---|
-| Gateway URL + API key | Browser memory only | When you close Chrome |
-| Chat history | Browser memory only | When you close the side panel |
+| Gateway URL + API key | Your machine only (`.env` file) | Never sent anywhere except your own AI gateway |
+| Chat history | Browser memory only | Cleared when you close the side panel |
 | Page content you read | Browser memory only | Never written to disk |
-| FortiCNAPP credentials | Your machine only (`~/.lacework.toml`) | You control this |
+| FortiCNAPP credentials | Your machine only (`~/.lacework.toml`) | Standard lacework CLI credential file |
+| FortiGuard threat data | Fetched live, never stored | RSS feed proxied through your local server |
 
-The local server (`serve.py`) only listens on `localhost` — nothing is reachable from outside your machine.
+The local server (`serve.py`) only listens on `localhost` — it is not reachable from the internet or from other devices on your network.
 
 ---
 
 ## Technical reference
 
 <details>
-<summary>Manual configuration, environment variables, API endpoints</summary>
+<summary>For developers — manual config, API endpoints, architecture</summary>
 
-### Manual start (no setup script)
+### Manual start (without setup script)
 
 ```bash
 cp .env.tpl .env        # copy the template
-# edit .env and fill in ANTHROPIC_BASE_URL and BIFROST_VIRTUAL_KEY
+# edit .env with your ANTHROPIC_BASE_URL and BIFROST_VIRTUAL_KEY
 python3 serve.py        # starts on http://localhost:45321
 ```
 
@@ -177,11 +203,11 @@ python3 serve.py        # starts on http://localhost:45321
 
 FortiCNAPP credentials come from `~/.lacework.toml` (created by `lacework configure`).
 
-### Backend API endpoints (served on `localhost:45321`)
+### Backend API endpoints (`localhost:45321`)
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/config` | Returns gateway URL, key, and feature-availability flags |
+| GET | `/config` | Gateway URL, key, and feature-availability flags |
 | POST | `/proxy/v1/*` | Proxies streaming requests to the AI gateway |
 | POST | `/codesec` | SCA + SAST scan via lacework CLI |
 | POST | `/sbom` | CycloneDX SBOM via lacework CLI |
@@ -191,51 +217,51 @@ FortiCNAPP credentials come from `~/.lacework.toml` (created by `lacework config
 | POST | `/lql/run` | Execute an LQL query against FortiCNAPP |
 | POST | `/lql/cve` | CVE attack surface: affected hosts and containers |
 | POST | `/lql/generate` | Convert plain-English objective to LQL via Claude |
-| GET | `/fortiguard/outbreaks` | Proxies FortiGuard outbreak alert RSS feed |
+| GET | `/fortiguard/outbreaks` | FortiGuard outbreak RSS feed (cached 30 min) |
+| GET | `/fortiguard/outbreak-by-cve?cveId=` | Outbreak alerts matching a specific CVE |
 
-### How LQL Generator works
+### How LQL Generator works — lightweight RAG
 
-The **✨ Generator** tab in the LQL panel converts plain-English security objectives into validated LQL queries using a three-step pipeline in `serve.py`:
+The **✨ Generator** tab converts plain-English security objectives into validated LQL queries:
 
 ```
 User types objective
-  → cache lookup (normalized objective key)
-    → HIT:  return cached queryId + queryText instantly, re-run query live
-    → MISS: serve.py sends objective + LQL system prompt to Claude (via AI gateway)
+  → cache lookup (normalized key)
+    → HIT:  return cached queryId + queryText instantly
+    → MISS: serve.py injects LQL reference into Claude's system prompt
               → Claude returns { queryId, queryText }
-                → serve.py runs the query live with: lacework query run
-                  → if run fails: error sent back to Claude with "fix this"
-                    → Claude returns corrected query (up to 3 retries)
-                      → validated query + pre-fetched rows returned to extension
-                        → queryId + queryText stored in cache (rows not cached)
+                → serve.py runs the query live: lacework query run
+                  → if it fails: error sent back to Claude — fix and retry (up to 3x)
+                    → validated query + pre-fetched rows returned to extension
+                      → queryId + queryText stored in cache
 ```
 
-**How Claude knows LQL — lightweight RAG**: Anthropic has no built-in knowledge of LQL. `serve.py` injects a full LQL reference directly into the system prompt on every request — datasource names, field syntax rules (`RESOURCE_CONFIG:field::String`), valid operators, region filter patterns, timestamp rules, and working example queries. Without this injection, Claude would hallucinate non-existent functions and wrong field names.
-
-This is **Retrieval-Augmented Generation (RAG)** — but without the retrieval layer. Classic RAG uses an embedding model to search a vector database and pull only the most relevant chunks into the prompt. That complexity is justified when the knowledge base is large (thousands of documents, full API references, multi-cloud docs). Here the entire LQL reference fits in ~100 lines, so injecting it in full on every request is simpler, faster, and equally effective.
+**Why this works without a vector database**: Claude has no built-in knowledge of LQL. `serve.py` injects the entire LQL reference (~100 lines: datasource names, field syntax, valid operators, region filter rules, timestamp patterns) into every request. This is Retrieval-Augmented Generation (RAG) without the retrieval step — the knowledge base is small enough to inject in full every time.
 
 | Approach | When to use |
 |---|---|
-| **Full injection (what we do)** | Knowledge base is small and always relevant — inject everything, every time |
-| **Vector DB + RAG** | Knowledge base is large (100s of docs) — retrieve only the relevant chunks per query |
-| **Fine-tuning** | Domain knowledge is stable and extremely high-volume — bake it into the model weights |
+| **Full injection (what we do)** | Knowledge base is small and always relevant |
+| **Vector DB + RAG** | Knowledge base is large — retrieve only relevant chunks per query |
+| **Fine-tuning** | Domain knowledge is stable, extremely high volume — bake into model weights |
 
-The LQL reference lives in `serve.py` and is versioned with the project — no external database, no embedding pipeline, no infrastructure to maintain.
+### How Attack Surface + FortiGuard enrichment works
 
-**Run-then-fix loop**: the query is actually executed (not just validated) before being returned. If the run fails (wrong field name, invalid operator, bad region filter), the error is fed back to Claude automatically — up to 3 retries. The extension receives pre-fetched rows alongside the query, with no second round-trip needed.
+When a CVE is searched, two requests fire in parallel:
+1. `/lql/cve` — queries FortiCNAPP for affected hosts and containers
+2. `/fortiguard/outbreak-by-cve` — checks the FortiGuard RSS feed for matching outbreak alerts
 
-**LQL cache**: `serve.py` caches `queryId` + `queryText` in memory keyed by normalized objective. Identical or near-identical prompts return instantly without calling Claude again. Rows are intentionally not cached — the query always re-runs live to return fresh data. Cache resets on server restart.
+Both datasets are combined into Claude's prompt. Claude produces a CISO-level report with host exposure, MITRE TTPs from FortiGuard, and remediation scripts.
 
-**Supported datasources**: AWS config (`LW_CFG_AWS_*`), workload/agent (`LW_HE_*`, `LW_HA_*`), CloudTrail (`CloudTrailRawEvents`), entitlements (`LW_CE_*`), and attack paths (`LW_APA_*`).
+The FortiGuard RSS feed is cached in memory for 30 minutes. CVE IDs are extracted from alert titles and descriptions via regex.
 
-### Docker (self-contained, for teams)
+### Docker (for teams)
 
 ```bash
 docker compose up -d          # first run
-docker compose up --build -d  # after changes to serve.py
+docker compose up --build -d  # after code changes
 docker compose down
 ```
 
-Requires `~/claude_cnapp/lql/lql_queries` for LQL files and `~/.lacework.toml` for credentials — both mounted read-only into the container.
+Requires `~/claude_cnapp/lql/lql_queries` for LQL files and `~/.lacework.toml` for credentials.
 
 </details>
