@@ -3,71 +3,73 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bifrost — Fortinet AI Chat</title>
+<title>Web AI Agent</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { border-top: 3px solid #EE3124; }
-
 :root {
-  --bg:        #ffffff;
-  --surface:   #f7f8fa;
-  --surface2:  #f0f2f5;
-  --border:    #e0e2e8;
+  --bg:        #f5f6f8;
+  --surface:   #ffffff;
+  --border:    #e2e4e9;
   --accent:    #EE3124;
   --accent-d:  #c41e14;
+  --accent-lt: #fff0ef;
   --navy:      #1a1a2e;
   --navy-d:    #111120;
-  --text:      #1d1d2e;
+  --text:      #111827;
   --text-body: #374151;
-  --muted:     #6b7280;
-  --ok:        #2e7d55;
-  --err:       #c0392b;
-  --code-bg:   #f5f6f8;
+  --muted:     #9ca3af;
+  --ok:        #16a34a;
+  --err:       #dc2626;
+  --code-bg:   #f1f3f5;
+  --user-bg:   #EE3124;
+  --user-text: #ffffff;
+  --ai-bg:     #ffffff;
+  --ai-text:   #1f2937;
   --mono:      "SF Mono", "Fira Code", "Consolas", monospace;
-  --sans:      -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --sans:      -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif;
+  --radius:    18px;
 }
 
-body {
+html, body {
+  height: 100dvh;
   font-family: var(--sans);
   font-size: 14px;
   background: var(--bg);
   color: var(--text-body);
-  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-/* ── Nav / Toolbar ── */
-#toolbar {
+/* ── Header ── */
+#header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 20px;
-  height: 52px;
+  gap: 10px;
+  padding: 0 18px;
+  height: 54px;
   background: var(--navy);
   border-bottom: 3px solid var(--accent);
   flex-shrink: 0;
-  flex-wrap: wrap;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-right: 8px;
+  gap: 9px;
+  margin-right: 6px;
 }
 
 .brand img {
-  height: 22px;
+  height: 20px;
   filter: brightness(0) invert(1);
 }
 
 .brand-sep {
   width: 1px;
-  height: 18px;
-  background: rgba(255,255,255,.25);
+  height: 16px;
+  background: rgba(255,255,255,.2);
 }
 
 .brand-label {
@@ -77,236 +79,300 @@ body {
   color: rgba(255,255,255,.85);
 }
 
-#toolbar label {
-  color: rgba(255,255,255,.5);
-  font: 600 11px/1 var(--sans);
-  letter-spacing: .05em;
-  text-transform: uppercase;
-  white-space: nowrap;
+.ctrl-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-#toolbar input, #toolbar select {
+.ctrl-group label {
+  color: rgba(255,255,255,.4);
+  font: 600 10px/1 var(--sans);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+#header input, #header select {
   font: 13px/1 var(--sans);
-  background: rgba(255,255,255,.08);
-  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.09);
+  border: 1px solid rgba(255,255,255,.16);
   color: #fff;
-  padding: 5px 10px;
-  border-radius: 4px;
+  padding: 5px 9px;
+  border-radius: 6px;
   outline: none;
   transition: border-color .15s;
 }
 
-#toolbar input:focus, #toolbar select:focus {
-  border-color: var(--accent);
-}
-
-#toolbar select option { background: var(--navy); color: #fff; }
-#key-input { width: 200px; }
-#toolbar select { cursor: pointer; }
-
-#toolbar input::placeholder { color: rgba(255,255,255,.35); }
+#header input:focus, #header select:focus { border-color: var(--accent); }
+#header select option { background: var(--navy-d); }
+#header input::placeholder { color: rgba(255,255,255,.3); }
+#key-input { width: 190px; }
 
 #status {
   margin-left: auto;
-  font: 600 11px/1 var(--sans);
-  letter-spacing: .05em;
+  font: 600 10px/1 var(--sans);
+  letter-spacing: .06em;
   text-transform: uppercase;
-  color: rgba(255,255,255,.4);
+  color: rgba(255,255,255,.35);
   transition: color .2s;
+  white-space: nowrap;
 }
 #status.ok   { color: #4ade80; }
 #status.err  { color: #f87171; }
-#status.busy { color: rgba(255,255,255,.55); }
+#status.busy { color: rgba(255,255,255,.6); }
 
-/* ── Messages ── */
+/* ── Message log ── */
 #log {
   flex: 1;
   overflow-y: auto;
-  padding: 0;
+  padding: 20px 0;
   display: flex;
   flex-direction: column;
+  gap: 4px;
+  scroll-behavior: smooth;
 }
 
 #log::-webkit-scrollbar { width: 4px; }
 #log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+/* ── Chat bubbles ── */
 .turn {
   display: flex;
-  gap: 0;
-  padding: 14px 24px;
-  border-bottom: 1px solid var(--border);
-  line-height: 1.65;
-  animation: in .12s ease;
+  flex-direction: column;
+  padding: 2px 18px;
+  animation: msgIn .14s ease;
 }
 
-.turn.turn-user {
-  background: var(--bg);
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
 }
 
-.turn.turn-ai {
-  background: var(--surface);
-  border-left: 3px solid var(--accent);
-}
+.turn-user { align-items: flex-end; }
+.turn-ai   { align-items: flex-start; }
+.turn-system { align-items: center; }
 
-.turn.turn-system {
-  background: #fff8f8;
-  border-left: 3px solid var(--err);
-}
-
-@keyframes in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
-
-.turn:last-child { border-bottom: none; }
-
-.role {
-  width: 100px;
-  flex-shrink: 0;
-  font: 600 11px/1.4 var(--sans);
-  letter-spacing: .06em;
+.role-label {
+  font: 600 10px/1 var(--sans);
+  letter-spacing: .05em;
   text-transform: uppercase;
-  padding-top: 3px;
-  user-select: none;
+  margin-bottom: 4px;
+  padding: 0 4px;
 }
 
-.role.user   { color: var(--accent); }
-.role.ai     { color: var(--muted); }
-.role.system { color: var(--err); }
+.turn-user .role-label   { color: var(--accent); }
+.turn-ai   .role-label   { color: var(--muted); }
+.turn-system .role-label { color: var(--muted); }
 
-.content {
-  flex: 1;
-  font: 14px/1.65 var(--mono);
-  white-space: pre-wrap;
+.bubble {
+  max-width: 76%;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font: 14px/1.6 var(--sans);
   word-break: break-word;
   overflow-wrap: anywhere;
-  color: var(--text-body);
+  white-space: pre-wrap;
+  box-shadow: 0 1px 3px rgba(0,0,0,.07);
 }
 
-.content code {
+.turn-user .bubble {
+  background: var(--user-bg);
+  color: var(--user-text);
+  border-bottom-right-radius: 5px;
+}
+
+.turn-ai .bubble {
+  background: var(--ai-bg);
+  color: var(--ai-text);
+  border-bottom-left-radius: 5px;
+  border: 1px solid var(--border);
+}
+
+.turn-system .bubble {
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  box-shadow: none;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 5px 12px;
+  max-width: 90%;
+}
+
+/* ── Code inside bubbles ── */
+.bubble code {
   font-family: var(--mono);
   font-size: 12px;
   background: var(--code-bg);
-  color: #c0392b;
+  color: var(--accent-d);
   padding: 1px 5px;
-  border-radius: 3px;
-  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 
-.content pre {
+.turn-user .bubble code {
+  background: rgba(255,255,255,.18);
+  color: #fff;
+}
+
+.bubble pre {
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
-  border-radius: 4px;
-  padding: 12px 14px;
+  border-radius: 6px;
+  padding: 10px 12px;
   overflow-x: auto;
-  margin: 8px 0;
+  margin: 6px 0;
   font-family: var(--mono);
   font-size: 12px;
   line-height: 1.5;
+  white-space: pre;
 }
 
-.content pre code { background: none; padding: 0; border: none; color: var(--text-body); }
+.bubble pre code { background: none; padding: 0; border: none; color: var(--text-body); }
 
+.turn-user .bubble pre {
+  background: rgba(0,0,0,.15);
+  border-color: rgba(255,255,255,.2);
+  color: #fff;
+}
+
+.turn-user .bubble pre code { color: #fff; }
+
+/* ── Streaming cursor ── */
 .cursor {
   display: inline-block;
-  width: 7px;
+  width: 2px;
   height: 14px;
   background: var(--accent);
   vertical-align: text-bottom;
   border-radius: 1px;
   animation: blink .7s step-end infinite;
+  margin-left: 1px;
 }
 @keyframes blink { 50% { opacity: 0; } }
 
-/* ── Input ── */
-#input-row {
-  display: flex;
+/* ── Input bar ── */
+#input-wrap {
+  padding: 12px 16px;
   background: var(--bg);
-  border-top: 2px solid var(--border);
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+#input-inner {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 8px 8px 8px 14px;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+#input-inner:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(238,49,36,.08);
 }
 
 #prompt {
   flex: 1;
-  font: 14px/1.55 var(--mono);
-  padding: 12px 16px;
+  font: 14px/1.55 var(--sans);
   border: none;
   outline: none;
   resize: none;
-  min-height: 46px;
-  max-height: 180px;
+  min-height: 24px;
+  max-height: 160px;
   background: transparent;
   color: var(--text);
+  padding: 2px 0;
 }
 
 #prompt::placeholder { color: var(--muted); }
 
 #send {
-  font: 600 12px/1 var(--sans);
-  letter-spacing: .04em;
-  text-transform: uppercase;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
   background: var(--accent);
   color: #fff;
   border: none;
-  border-left: 1px solid var(--border);
-  padding: 0 22px;
+  border-radius: 10px;
   cursor: pointer;
-  white-space: nowrap;
-  transition: background .15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s, transform .1s;
+  font-size: 16px;
+  line-height: 1;
 }
 
-#send:hover:not(:disabled) { background: var(--accent-d); }
-#send:disabled { opacity: .35; cursor: not-allowed; }
+#send:hover:not(:disabled) { background: var(--accent-d); transform: scale(1.04); }
+#send:disabled { opacity: .35; cursor: not-allowed; transform: none; }
 
-/* ── Footer ── */
-#hint {
-  padding: 5px 24px;
+/* ── Footer hint ── */
+#footer {
+  padding: 4px 18px 6px;
   font: 11px/1 var(--sans);
-  color: var(--muted);
+  color: rgba(255,255,255,.3);
   background: var(--navy);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
-#hint a { color: rgba(255,255,255,.35); text-decoration: none; }
-#token-info { color: rgba(255,255,255,.5); font: 600 11px/1 var(--sans); letter-spacing: .03em; }
+#token-info { color: rgba(255,255,255,.45); font: 600 10px/1 var(--sans); letter-spacing: .03em; }
 </style>
 </head>
 <body>
 
-<div id="toolbar">
+<div id="header">
   <div class="brand">
     <img src="https://www.fortinet.com/content/dam/fortinet-blog/fortinet-logo-white.svg" alt="Fortinet" />
     <div class="brand-sep"></div>
-    <span class="brand-label">Bifrost</span>
+    <span class="brand-label">Web AI Agent</span>
   </div>
-  <label>key</label>
-  <input id="key-input" type="password" placeholder="sk-ant-…" autocomplete="off" />
-  <label>model</label>
-  <select id="model">
-    <option value="claude-haiku-4-5">haiku-4-5</option>
-    <option value="claude-sonnet-4-6" selected>sonnet-4-6</option>
-    <option value="claude-opus-4-8">opus-4-8</option>
-  </select>
-  <label>tokens</label>
-  <select id="max-tokens">
-    <option value="512">512</option>
-    <option value="1024">1024</option>
-    <option value="2048" selected>2048</option>
-    <option value="4096">4096</option>
-    <option value="8192">8192</option>
-  </select>
+
+  <div class="ctrl-group">
+    <label>key</label>
+    <input id="key-input" type="password" placeholder="sk-bf-… or sk-ant-…" autocomplete="off" />
+  </div>
+
+  <div class="ctrl-group">
+    <label>model</label>
+    <select id="model">
+      <option value="claude-haiku-4-5">haiku 4.5 ⚡</option>
+      <option value="claude-sonnet-4-6" selected>sonnet 4.6</option>
+      <option value="claude-opus-4-8">opus 4.8</option>
+    </select>
+  </div>
+
+  <div class="ctrl-group">
+    <label>tokens</label>
+    <select id="max-tokens">
+      <option value="1024">1k</option>
+      <option value="2048" selected>2k</option>
+      <option value="4096">4k</option>
+      <option value="8192">8k</option>
+    </select>
+  </div>
+
   <span id="status">—</span>
 </div>
 
 <div id="log"></div>
 
-<div id="input-row">
-  <textarea id="prompt" placeholder="message…" rows="1" oninput="resize(this)" onkeydown="onKey(event)"></textarea>
-  <button id="send" onclick="send()">Send ↵</button>
+<div id="input-wrap">
+  <div id="input-inner">
+    <textarea id="prompt" placeholder="Ask anything…" rows="1"
+      oninput="resize(this)" onkeydown="onKey(event)"></textarea>
+    <button id="send" onclick="send()" title="Send (Enter)">↑</button>
+  </div>
 </div>
 
-<div id="hint">
-  <span>shift+enter: newline</span>
+<div id="footer">
+  <span>shift+enter for newline</span>
   <span id="token-info"></span>
 </div>
 
@@ -318,19 +384,21 @@ const BASE_URL = (location.hostname === 'localhost' || location.hostname === '12
 const history = [];
 let busy = false;
 
-const $  = id => document.getElementById(id);
+const $ = id => document.getElementById(id);
 const st = (msg, cls='') => { const s=$('status'); s.textContent=msg; s.className=cls; };
 
-// ── Markdown (minimal) ────────────────────────────────────────────────────
+// ── Markdown ──────────────────────────────────────────────────────────────────
 function render(t) {
   const e = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, (_,l,c) => `<pre><code>${e(c.trimEnd())}</code></pre>`);
-  t = t.replace(/`([^`]+)`/g, (_,c) => `<code>${e(c)}</code>`);
+  t = t.replace(/`([^`]+)`/g,    (_,c) => `<code>${e(c)}</code>`);
   t = t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/\*(.+?)\*/g,     '<em>$1</em>');
+  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;opacity:.85">$1</a>');
   return t;
 }
 
-// ── Persist key ───────────────────────────────────────────────────────────
+// ── Persist key ───────────────────────────────────────────────────────────────
 const ki = $('key-input');
 const saved = localStorage.getItem('bf_key');
 if (saved) ki.value = saved;
@@ -339,42 +407,40 @@ ki.addEventListener('change', () => {
   v ? localStorage.setItem('bf_key', v) : localStorage.removeItem('bf_key');
 });
 
-// ── Auto-resize textarea ──────────────────────────────────────────────────
+// ── Textarea auto-resize ──────────────────────────────────────────────────────
 function resize(el) {
   el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 180) + 'px';
+  el.style.height = Math.min(el.scrollHeight, 160) + 'px';
 }
 
 function onKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 }
 
-// ── Append turn ───────────────────────────────────────────────────────────
+// ── Append bubble ─────────────────────────────────────────────────────────────
 function appendTurn(role, text='', modelLabel='') {
-  const div = document.createElement('div');
-  div.className = `turn turn-${role}`;
+  const wrap = document.createElement('div');
+  wrap.className = `turn turn-${role}`;
 
-  const rl = document.createElement('div');
-  rl.className = `role ${role}`;
-  let roleText = role === 'user' ? 'you ›' : role === 'ai' ? (modelLabel || 'ai') + ' ›' : 'sys ›';
-  rl.textContent = roleText;
+  const lbl = document.createElement('div');
+  lbl.className = 'role-label';
+  lbl.textContent = role === 'user' ? 'You' : role === 'ai' ? (modelLabel || 'AI') : 'System';
 
-  const ct = document.createElement('div');
-  ct.className = 'content';
-  if (text) ct.innerHTML = render(text);
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  if (text) bubble.innerHTML = render(text);
 
-  div.appendChild(rl);
-  div.appendChild(ct);
-  $('log').appendChild(div);
-  scroll();
-  return ct;
+  wrap.append(lbl, bubble);
+  $('log').appendChild(wrap);
+  scrollLog();
+  return bubble;
 }
 
-function scroll() {
+function scrollLog() {
   const l = $('log'); l.scrollTop = l.scrollHeight;
 }
 
-// ── Send ──────────────────────────────────────────────────────────────────
+// ── Send ──────────────────────────────────────────────────────────────────────
 async function send() {
   if (busy) return;
 
@@ -383,7 +449,7 @@ async function send() {
   const maxTk = parseInt($('max-tokens').value);
   const text  = $('prompt').value.trim();
 
-  if (!key)  { appendTurn('system', 'error: no key set'); return; }
+  if (!key)  { appendTurn('system', 'No API key — enter your key in the toolbar.'); return; }
   if (!text) return;
 
   history.push({ role: 'user', content: text });
@@ -391,17 +457,16 @@ async function send() {
   $('prompt').value = '';
   $('prompt').style.height = 'auto';
 
-  const shortModel = model.replace('claude-','').replace('-20251001','');
+  const shortModel = model.replace('claude-','');
   const aiBubble = appendTurn('ai', '', shortModel);
   const cursor   = Object.assign(document.createElement('span'), { className: 'cursor' });
   aiBubble.appendChild(cursor);
 
   busy = true;
   $('send').disabled = true;
-  st('streaming…', 'busy');
+  st('●  streaming', 'busy');
 
-  let out = '';
-  let inputTk = 0, outputTk = 0;
+  let out = '', inputTk = 0, outputTk = 0;
 
   try {
     const res = await fetch(`${BASE_URL}/v1/messages`, {
@@ -414,14 +479,11 @@ async function send() {
       body: JSON.stringify({ model, max_tokens: maxTk, stream: true, messages: history }),
     });
 
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`${res.status}: ${err}`);
-    }
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 
-    const reader  = res.body.getReader();
-    const dec     = new TextDecoder();
-    let   buf     = '';
+    const reader = res.body.getReader();
+    const dec    = new TextDecoder();
+    let buf = '';
 
     while (true) {
       const { done, value } = await reader.read();
@@ -440,14 +502,10 @@ async function send() {
             out += ev.delta.text;
             aiBubble.innerHTML = render(out);
             aiBubble.appendChild(cursor);
-            scroll();
+            scrollLog();
           }
-          if (ev.type === 'message_start') {
-            inputTk = ev.message?.usage?.input_tokens ?? 0;
-          }
-          if (ev.type === 'message_delta') {
-            outputTk = ev.usage?.output_tokens ?? 0;
-          }
+          if (ev.type === 'message_start')  inputTk  = ev.message?.usage?.input_tokens ?? 0;
+          if (ev.type === 'message_delta')  outputTk = ev.usage?.output_tokens ?? 0;
         } catch (_) {}
       }
     }
@@ -455,18 +513,18 @@ async function send() {
     cursor.remove();
     aiBubble.innerHTML = render(out);
     history.push({ role: 'assistant', content: out });
-    st('ok', 'ok');
-    $('token-info').textContent = `↑ sent:${inputTk}  ↓ recv:${outputTk}  total:${inputTk+outputTk} tokens`;
+    st('✓', 'ok');
+    $('token-info').textContent = `↑ ${inputTk}  ↓ ${outputTk}  total ${inputTk+outputTk} tokens`;
 
   } catch (err) {
     cursor.remove();
-    aiBubble.textContent = `error: ${err.message}`;
+    aiBubble.textContent = `Error: ${err.message}`;
     history.pop();
     st('error', 'err');
   } finally {
     busy = false;
     $('send').disabled = false;
-    scroll();
+    scrollLog();
   }
 }
 
