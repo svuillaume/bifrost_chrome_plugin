@@ -199,18 +199,22 @@ The **✨ Generator** tab in the LQL panel converts plain-English security objec
 
 ```
 User types objective
-  → POST /lql/generate
-    → serve.py sends objective + LQL system prompt to Claude (via AI gateway)
-      → Claude returns a JSON { queryId, queryText }
-        → serve.py validates the query with: lacework query run --validate_only
-          → if validation fails: error is sent back to Claude with "fix this"
-            → Claude returns corrected query (up to 3 retries)
-              → validated query returned to the extension
+  → cache lookup (normalized objective key)
+    → HIT:  return cached queryId + queryText instantly, re-run query live
+    → MISS: serve.py sends objective + LQL system prompt to Claude (via AI gateway)
+              → Claude returns { queryId, queryText }
+                → serve.py runs the query live with: lacework query run
+                  → if run fails: error sent back to Claude with "fix this"
+                    → Claude returns corrected query (up to 3 retries)
+                      → validated query + pre-fetched rows returned to extension
+                        → queryId + queryText stored in cache (rows not cached)
 ```
 
-**What's in the system prompt**: `serve.py` embeds a detailed LQL reference directly into every generation request — datasource names, field syntax rules (`RESOURCE_CONFIG:field::String`), valid operators, timestamp patterns, and working example queries. This gives Claude the context it needs to generate correct LQL without hallucinating non-existent functions or field names.
+**What's in the system prompt**: `serve.py` embeds a detailed LQL reference into every generation request — datasource names, field syntax rules (`RESOURCE_CONFIG:field::String`), valid operators, region filter patterns, timestamp rules, and working example queries. This gives Claude the context it needs to generate correct LQL without hallucinating non-existent functions or field names.
 
-**Validate-then-fix loop**: the lacework CLI validates each generated query before it reaches the user. If the query fails (wrong field name, invalid operator, type mismatch), the error message is fed back to Claude automatically. This catches and corrects syntax errors without any user intervention — typically resolved in one retry.
+**Run-then-fix loop**: the query is actually executed (not just validated) before being returned. If the run fails (wrong field name, invalid operator, bad region filter), the error is fed back to Claude automatically — up to 3 retries. The extension receives pre-fetched rows alongside the query, with no second round-trip needed.
+
+**LQL cache**: `serve.py` caches `queryId` + `queryText` in memory keyed by normalized objective. Identical or near-identical prompts return instantly without calling Claude again. Rows are intentionally not cached — the query always re-runs live to return fresh data. Cache resets on server restart.
 
 **Supported datasources**: AWS config (`LW_CFG_AWS_*`), workload/agent (`LW_HE_*`, `LW_HA_*`), CloudTrail (`CloudTrailRawEvents`), entitlements (`LW_CE_*`), and attack paths (`LW_APA_*`).
 
