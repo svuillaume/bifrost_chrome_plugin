@@ -693,9 +693,11 @@ body {
   color: #e2e8f4;
   border-bottom-left-radius: 4px;
   border: 1px solid #2d3f55;
+  position: relative;
+  padding-bottom: 26px;
 }
 @media (prefers-color-scheme: light) {
-  .turn-ai .content { background: #f0f5ff; color: #1a2540; border-color: #c7d6f0; }
+  .turn-ai .content { background: #f0f5ff; color: #1a2540; border-color: #c7d6f0; position: relative; padding-bottom: 26px; }
 }
 .turn-system .content {
   background: #1a1f14;
@@ -724,7 +726,6 @@ body {
 .turn-ai   .turn-label  { text-align: left;  color: #2563eb; }
 
 /* ── Bubble + label wrapper ── */
-.bubble-col .rc-copy-btn { margin-top: 3px; }
 .bubble-col {
   display: flex;
   flex-direction: column;
@@ -791,16 +792,22 @@ a.ext-link:hover { color: var(--accent-d); }
 .result-card-title { color: var(--text); font-size: 12px; font-weight: 600; flex: 1; }
 .rc-actions { display: flex; gap: 4px; margin-left: auto; }
 .rc-copy-btn {
+  position: absolute;
+  bottom: 6px;
+  right: 8px;
   font: 600 10px/1 var(--sans);
-  padding: 3px 8px;
+  padding: 3px 7px;
   border-radius: 5px;
   border: 1px solid var(--border);
   background: var(--surface2);
   color: var(--muted);
   cursor: pointer;
-  transition: color .1s, background .1s;
+  opacity: 0;
+  transition: color .1s, background .1s, opacity .15s;
+  line-height: 1.4;
 }
-.rc-copy-btn:hover { color: var(--text); background: var(--surface3); }
+.turn-ai .content:hover .rc-copy-btn { opacity: 1; }
+.rc-copy-btn:hover { color: var(--text); background: var(--surface3); opacity: 1; }
 .cs-result-body, .cve-result-body, .lql-result-body {
   padding: 8px 12px;
   max-height: 320px;
@@ -1092,7 +1099,7 @@ a.ext-link:hover { color: var(--accent-d); }
 <div id="log-all"    class="log-pane"></div>
 
 <div id="input-row">
-  <textarea id="prompt" placeholder="Ask about your cloud security posture… (Enter to send)" rows="1"></textarea>
+  <textarea id="prompt" placeholder="Ask me anything…" rows="1"></textarea>
   <button id="send">Send</button>
 </div>
 
