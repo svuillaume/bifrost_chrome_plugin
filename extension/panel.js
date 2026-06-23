@@ -762,10 +762,11 @@ function appendResultCard(icon, title, contentEl) {
       actions.appendChild(csvBtn);
       hdr.appendChild(actions);
     }
-    // Copy button sits bottom-right inside the body
-    body.style.position = 'relative';
-    body.appendChild(buildCopyBtn(body));
-    card.append(hdr, body);
+    // Footer with copy button always visible at the bottom of the card
+    const footer = document.createElement('div');
+    footer.className = 'rc-footer';
+    footer.appendChild(buildCopyBtn(body));
+    card.append(hdr, body, footer);
     return card;
   };
 

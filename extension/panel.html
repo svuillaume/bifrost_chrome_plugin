@@ -792,9 +792,6 @@ a.ext-link:hover { color: var(--accent-d); }
 .result-card-title { color: var(--text); font-size: 12px; font-weight: 600; flex: 1; }
 .rc-actions { display: flex; gap: 4px; margin-left: auto; }
 .rc-copy-btn {
-  position: absolute;
-  bottom: 6px;
-  right: 8px;
   font: 600 10px/1 var(--sans);
   padding: 3px 7px;
   border-radius: 5px;
@@ -806,8 +803,23 @@ a.ext-link:hover { color: var(--accent-d); }
   line-height: 1.4;
 }
 .rc-copy-btn:hover { color: var(--text); background: var(--surface3); }
+/* Footer strip below scrollable body — keeps copy btn always visible */
+.rc-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px 6px;
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+  border-radius: 0 0 10px 10px;
+}
+/* AI bubble copy btn stays absolute bottom-right inside the bubble */
+.turn-ai .content .rc-copy-btn {
+  position: absolute;
+  bottom: 6px;
+  right: 8px;
+}
 .cs-result-body, .cve-result-body, .lql-result-body {
-  padding: 8px 12px 32px;
+  padding: 8px 12px;
   max-height: 320px;
   overflow-y: auto;
 }
