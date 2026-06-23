@@ -9,9 +9,15 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   const windowId = sender.tab?.windowId;
   if (!windowId) return;
 
-  // Store so the panel can pick it up if it isn't open yet
-  chrome.storage.session.set({ pendingCve: msg.cveId });
-
-  // Open the side panel then let the panel poll storage
-  chrome.sidePanel.open({ windowId });
+  // Always store — panel reads this on open if it wasn't already open
+  chrome.storage.session.set({ pendingCve: msg.cveId }, () => {
+    // Try to forward to an already-open panel; if none is open, open one
+    // (the panel's storage.session.get on load will pick up pendingCve)
+    chrome.runtime.sendMessage({ type: 'CVE_SELECTED', cveId: msg.cveId }, () => {
+      // sendMessage throws if no listener answered — that just means the panel
+      // wasn't open yet; suppress the error and open it
+      void chrome.runtime.lastError;
+      chrome.sidePanel.open({ windowId });
+    });
+  });
 });
