@@ -403,6 +403,10 @@ async function withPage(btnId, fn) {
   }
 }
 
+el('fortiguard-feed').addEventListener('click', () => {
+  chrome.tabs.create({ url: 'https://www.fortiguard.com/' });
+});
+
 el('read-page').addEventListener('click', () => withPage('read-page', page => {
   history.push({ role: 'user',      content: pageCtx(page) });
   history.push({ role: 'assistant', content: 'Page loaded. Ask me anything about it.' });
