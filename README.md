@@ -185,6 +185,27 @@ FortiCNAPP credentials come from `~/.lacework.toml` (created by `lacework config
 | POST | `/lql/generate` | Convert plain-English objective to LQL via Claude |
 | GET | `/fortiguard/outbreaks` | Proxies FortiGuard outbreak alert RSS feed |
 
+### How LQL Generator works
+
+The **✨ Generator** tab in the LQL panel converts plain-English security objectives into validated LQL queries using a three-step pipeline in `serve.py`:
+
+```
+User types objective
+  → POST /lql/generate
+    → serve.py sends objective + LQL system prompt to Claude (via AI gateway)
+      → Claude returns a JSON { queryId, queryText }
+        → serve.py validates the query with: lacework query run --validate_only
+          → if validation fails: error is sent back to Claude with "fix this"
+            → Claude returns corrected query (up to 3 retries)
+              → validated query returned to the extension
+```
+
+**What's in the system prompt**: `serve.py` embeds a detailed LQL reference directly into every generation request — datasource names, field syntax rules (`RESOURCE_CONFIG:field::String`), valid operators, timestamp patterns, and working example queries. This gives Claude the context it needs to generate correct LQL without hallucinating non-existent functions or field names.
+
+**Validate-then-fix loop**: the lacework CLI validates each generated query before it reaches the user. If the query fails (wrong field name, invalid operator, type mismatch), the error message is fed back to Claude automatically. This catches and corrects syntax errors without any user intervention — typically resolved in one retry.
+
+**Supported datasources**: AWS config (`LW_CFG_AWS_*`), workload/agent (`LW_HE_*`, `LW_HA_*`), CloudTrail (`CloudTrailRawEvents`), entitlements (`LW_CE_*`), and attack paths (`LW_APA_*`).
+
 ### Docker (self-contained, for teams)
 
 ```bash
