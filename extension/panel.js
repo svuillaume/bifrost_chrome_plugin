@@ -1574,7 +1574,7 @@ el('cve-btn').addEventListener('click', () => {
   el('codesec-panel').classList.remove('open');
   el('compliance-panel').classList.remove('open');
   el('lql-panel').classList.remove('open');
-  if (!isOpen) { startNewSession('Attack Surface'); el('cve-input').focus(); }
+  if (!isOpen) { startNewSession('Enriched Attack Threat Surface'); el('cve-input').focus(); }
 });
 
 el('cve-close').addEventListener('click', () => el('cve-panel').classList.remove('open'));
