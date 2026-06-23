@@ -917,6 +917,29 @@ async function runComplianceReport() {
 
 el('comp-generate').addEventListener('click', runComplianceReport);
 
+// ── CVE text-selection auto-fill ─────────────────────────────────────────────
+// background.js stores the selected CVE in session storage; we poll for it
+// so it works whether the panel was already open or was just opened.
+function openCvePanel(cveId) {
+  el('cve-input').value = cveId;
+  // Close other drawers, open CVE panel
+  ['codesec-panel', 'compliance-panel', 'lql-panel'].forEach(id =>
+    el(id).classList.remove('open'));
+  el('cve-panel').classList.add('open');
+  runCveSearch();
+}
+
+chrome.runtime.onMessage.addListener(msg => {
+  if (msg.type === 'CVE_SELECTED' && msg.cveId) openCvePanel(msg.cveId);
+});
+
+// Pick up a CVE that was selected before the panel was open
+chrome.storage.session.get('pendingCve', ({ pendingCve }) => {
+  if (!pendingCve) return;
+  chrome.storage.session.remove('pendingCve');
+  openCvePanel(pendingCve);
+});
+
 // ── FortiCNAPP CVE Attack Surface ────────────────────────────────────────────
 
 let _lastCveData = null;

@@ -9,6 +9,11 @@
     "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src https://api.github.com https://raw.githubusercontent.com https: http://localhost:8765; img-src 'self' data:"
   },
   "web_accessible_resources": [{ "resources": ["config.json"], "matches": ["<all_urls>"] }],
+  "content_scripts": [{
+    "matches": ["https://*/*", "http://*/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }],
   "background": { "service_worker": "background.js" },
   "action": {
     "default_title": "Web AI Agent",
