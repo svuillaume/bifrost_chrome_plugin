@@ -78,7 +78,7 @@ if [ -n "$PORT_PIDS" ]; then
   warn "Port 8080 is already in use (PID: $PORT_PIDS)"
   prompt "Kill the process occupying port 8080? [y/N]"
   read -rp "  > " kill_choice
-  if [[ "${kill_choice,,}" == "y" ]]; then
+  if [[ "$kill_choice" == "y" || "$kill_choice" == "Y" ]]; then
     # Try Docker container first (graceful), then pkill
     DOCKER_CONTAINER=$(docker ps --filter "publish=8080" --format "{{.Names}}" 2>/dev/null | head -1 || true)
     if [ -n "$DOCKER_CONTAINER" ]; then
