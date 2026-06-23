@@ -1766,8 +1766,7 @@ async function runCveSearch() {
     resultsEl.className = 'cve-result-body';
     renderCveResults(data, resultsEl);
 
-    // Threat Radar + intel badges
-    const intel = data.cveIntel || {};
+    // Threat Radar + intel badges (intel already set above)
     const intelEl = document.createElement('div');
     intelEl.className = 'fg-outbreak-card';
 
