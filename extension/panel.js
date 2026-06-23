@@ -224,10 +224,36 @@ function setRendered(node, html) {
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
   node.replaceChildren(tpl.content.cloneNode(true));
+  if (node._allBody) {
+    const tpl2 = document.createElement('template');
+    tpl2.innerHTML = html;
+    node._allBody.replaceChildren(tpl2.content.cloneNode(true));
+  }
 }
 
-// ── Chat log ──────────────────────────────────────────────────────────────
-function scrollLog() { const l = el('log'); l.scrollTop = l.scrollHeight; }
+// ── Chat log (dual-pane: latest / all) ───────────────────────────────────
+function scrollLog() {
+  const active = document.querySelector('.log-pane.active');
+  if (active) active.scrollTop = active.scrollHeight;
+}
+
+function _appendToLog(node, cloneForAll) {
+  // Latest pane always shows only the current exchange (cleared on new user turn)
+  el('log-latest').appendChild(node);
+  // All pane gets an independent clone so both are independently scrollable
+  el('log-all').appendChild(cloneForAll || node.cloneNode(true));
+  scrollLog();
+}
+
+document.querySelectorAll('.log-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.log-tab').forEach(t  => t.classList.remove('active'));
+    document.querySelectorAll('.log-pane').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    el('log-' + tab.dataset.pane).classList.add('active');
+    scrollLog();
+  });
+});
 
 function appendTurn(role, text = '') {
   const turn = Object.assign(document.createElement('div'), {
@@ -238,8 +264,7 @@ function appendTurn(role, text = '') {
     const body = Object.assign(document.createElement('div'), { className: 'content' });
     if (text) body.textContent = text;
     turn.append(body);
-    el('log').appendChild(turn);
-    scrollLog();
+    _appendToLog(turn);
     return body;
   }
 
@@ -260,8 +285,31 @@ function appendTurn(role, text = '') {
   }
   col.append(lbl, body);
   turn.append(avatar, col);
-  el('log').appendChild(turn);
-  scrollLog();
+
+  // For user turns: clear the latest pane first (start of new exchange)
+  if (role === 'user') el('log-latest').innerHTML = '';
+
+  // ai turn: body is live-updated during streaming — keep a reference in both panes
+  if (role === 'ai') {
+    const bodyClone = Object.assign(document.createElement('div'), { className: 'content' });
+    const colClone  = Object.assign(document.createElement('div'), { className: 'bubble-col' });
+    const lblClone  = Object.assign(document.createElement('div'), { className: 'turn-label', textContent: 'Web AI Agent' });
+    const avatarClone = Object.assign(document.createElement('div'), { className: 'role ai', textContent: 'AI' });
+    const turnClone = Object.assign(document.createElement('div'), { className: 'turn turn-ai' });
+    colClone.append(lblClone, bodyClone);
+    turnClone.append(avatarClone, colClone);
+
+    el('log-latest').appendChild(turn);
+    el('log-all').appendChild(turnClone);
+    scrollLog();
+
+    // Keep both bodies in sync during streaming
+    const origSetRendered = body._setRendered;
+    body._allBody = bodyClone;
+    return body;
+  }
+
+  _appendToLog(turn);
   return body;
 }
 const resizePrompt = () => {
@@ -273,7 +321,8 @@ const resizePrompt = () => {
 // ── Clear ─────────────────────────────────────────────────────────────────
 el('clear').addEventListener('click', () => {
   history.length = 0;
-  el('log').innerHTML          = '';
+  el('log-latest').innerHTML   = '';
+  el('log-all').innerHTML      = '';
   el('token-info').textContent = '';
   el('read-page').classList.remove('active');
   setStatus('—');
@@ -483,7 +532,8 @@ function handleExtLink(e) {
   e.preventDefault();
   chrome.tabs.create({ url: a.dataset.href });
 }
-el('log').addEventListener('click', handleExtLink);
+el('log-latest').addEventListener('click', handleExtLink);
+el('log-all').addEventListener('click', handleExtLink);
 el('codesec-body').addEventListener('click', handleExtLink);
 
 el('prompt').addEventListener('input',   resizePrompt);
@@ -618,13 +668,61 @@ async function fetchGithubRepoFiles(owner, repo) {
 }
 
 function appendResultCard(icon, title, contentEl) {
-  const card = document.createElement('div');
-  card.className = 'result-card';
-  const hdr = document.createElement('div');
-  hdr.className = 'result-card-header';
-  hdr.innerHTML = `<span class="result-card-icon">${icon}</span><span class="result-card-title">${title}</span>`;
-  card.append(hdr, contentEl);
-  el('log').appendChild(card);
+  const table = contentEl.querySelector('table');
+
+  const buildCopyBtn = (body) => {
+    const btn = document.createElement('button');
+    btn.className   = 'rc-copy-btn';
+    btn.textContent = '⎘ Copy';
+    btn.title       = 'Copy as plain text';
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(body.innerText || body.textContent);
+      btn.textContent = '✓ Copied';
+      setTimeout(() => { btn.textContent = '⎘ Copy'; }, 1500);
+    });
+    return btn;
+  };
+
+  const buildCsvBtn = (tbl) => {
+    if (!tbl) return null;
+    const btn = document.createElement('button');
+    btn.className   = 'rc-copy-btn';
+    btn.textContent = '⬇ CSV';
+    btn.title       = 'Download as CSV';
+    btn.addEventListener('click', () => {
+      const rows = Array.from(tbl.querySelectorAll('tr'));
+      const csv  = rows.map(r =>
+        Array.from(r.querySelectorAll('th,td'))
+          .map(c => `"${(c.textContent || '').replace(/"/g, '""')}"`)
+          .join(',')
+      ).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url  = URL.createObjectURL(blob);
+      chrome.downloads
+        ? chrome.downloads.download({ url, filename: `${title.replace(/[^a-z0-9]/gi,'_')}.csv` })
+        : chrome.tabs.create({ url });
+    });
+    return btn;
+  };
+
+  const buildCard = (body) => {
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    const hdr = document.createElement('div');
+    hdr.className = 'result-card-header';
+    hdr.innerHTML = `<span class="result-card-icon">${icon}</span><span class="result-card-title">${title}</span>`;
+    const actions = document.createElement('div');
+    actions.className = 'rc-actions';
+    actions.appendChild(buildCopyBtn(body));
+    const csvBtn = buildCsvBtn(body.querySelector('table'));
+    if (csvBtn) actions.appendChild(csvBtn);
+    hdr.appendChild(actions);
+    card.append(hdr, body);
+    return card;
+  };
+
+  el('log-latest').appendChild(buildCard(contentEl));
+  el('log-all').appendChild(buildCard(contentEl.cloneNode(true)));
   scrollLog();
 }
 
@@ -659,7 +757,8 @@ function appendGithubCard(owner, repo, branch, files) {
     `</div>` +
     `<div class="gh-files">${rows}</div>`;
 
-  el('log').appendChild(card);
+  el('log-latest').appendChild(card);
+  el('log-all').appendChild(card.cloneNode(true));
   scrollLog();
 }
 
@@ -1287,17 +1386,14 @@ async function runCveSearch() {
 
     _lastCveData = data;
 
-    el('cve-panel').classList.remove('open');
-
     if (!data.hosts || !data.hosts.length) {
       statusEl.textContent = data.note || 'No results';
       statusEl.className   = '';
       setStatus('—');
-      appendTurn('system', `🔬 ${cveId} — ${data.note || 'No affected hosts found.'}`);
       return;
     }
 
-    renderCveResults(data);
+    renderCveResults(data, resultsEl);
 
     const exp = data.internet_exposed;
     statusEl.textContent = `${data.total_affected} hosts  |  ${exp} internet-exposed  |  ${data.fixable} fixable`;
@@ -1314,9 +1410,8 @@ async function runCveSearch() {
   }
 }
 
-function renderCveResults(data) {
-  const resultsEl = document.createElement('div');
-  resultsEl.className = 'cve-result-body';
+function renderCveResults(data, resultsEl) {
+  resultsEl.innerHTML = '';
 
   const summary = document.createElement('div');
   summary.className   = 'cve-summary';
@@ -1414,19 +1509,6 @@ function renderCveResults(data) {
     resultsEl.appendChild(card);
   });
 
-  const analyseBtn = document.createElement('button');
-  analyseBtn.className   = 'cs-sbom-btn';
-  analyseBtn.textContent = '🔍 Analyse attack surface';
-  analyseBtn.style.marginTop = '8px';
-  analyseBtn.addEventListener('click', () => {
-    const prompt = buildCveAnalysisPrompt(data);
-    history.push({ role: 'user', content: prompt });
-    appendTurn('user', `Analyse attack surface for ${data.cveId}`);
-    send(true);
-  });
-  resultsEl.appendChild(analyseBtn);
-
-  appendResultCard('🔬', `CVE ${data.cveId}`, resultsEl);
 }
 
 // ── FortiCNAPP LQL ───────────────────────────────────────────────────────────

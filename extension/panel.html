@@ -584,18 +584,46 @@ body {
 .lql-pane { display: none; }
 .lql-pane.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
-/* ── Chat log ────────────────────────────────────────────────────────────── */
-#log {
+/* ── Chat log tabs ───────────────────────────────────────────────────────── */
+#log-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 5px 10px 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.log-tab {
+  font: 600 10px/1 var(--sans);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 5px 12px 6px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color .12s, border-color .12s;
+  border-radius: 4px 4px 0 0;
+}
+.log-tab:hover  { color: var(--text); }
+.log-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Chat log panes ──────────────────────────────────────────────────────── */
+.log-pane {
+  display: none;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  display: flex;
   flex-direction: column;
   padding: 8px 0 4px;
   gap: 2px;
 }
-#log::-webkit-scrollbar { width: 3px; }
-#log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.log-pane.active {
+  display: flex;
+}
+.log-pane::-webkit-scrollbar { width: 3px; }
+.log-pane::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 @keyframes fadein { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
 
@@ -633,7 +661,6 @@ body {
 
 /* ── Bubbles ── */
 .content {
-  max-width: 82%;
   padding: 9px 12px;
   border-radius: 14px;
   word-break: break-word;
@@ -649,18 +676,21 @@ body {
   border-bottom-right-radius: 4px;
 }
 .turn-ai .content {
-  background: var(--surface3);
-  color: var(--text);
+  background: #1e2a3a;
+  color: #e2e8f4;
   border-bottom-left-radius: 4px;
-  border: 1px solid var(--border);
+  border: 1px solid #2d3f55;
+}
+@media (prefers-color-scheme: light) {
+  .turn-ai .content { background: #f0f5ff; color: #1a2540; border-color: #c7d6f0; }
 }
 .turn-system .content {
-  background: transparent;
-  color: var(--dim);
+  background: #1a1f14;
+  color: #7daf6a;
   font-size: 10.5px;
   font-family: var(--mono);
   padding: 3px 10px;
-  border: 1px dashed var(--border);
+  border: 1px solid #2e3d24;
   border-radius: 6px;
   max-width: 95%;
   text-align: center;
@@ -687,7 +717,7 @@ body {
   max-width: 82%;
 }
 .turn-user .bubble-col { align-items: flex-end; }
-.turn-ai   .bubble-col { align-items: flex-start; }
+.turn-ai   .bubble-col { flex: 1; min-width: 0; max-width: none; align-items: stretch; }
 
 .content code {
   font-family: var(--mono);
@@ -744,7 +774,19 @@ a.ext-link:hover { color: var(--accent-d); }
   border-bottom: 1px solid var(--border);
 }
 .result-card-icon { font-size: 13px; }
-.result-card-title { color: var(--text); font-size: 12px; font-weight: 600; }
+.result-card-title { color: var(--text); font-size: 12px; font-weight: 600; flex: 1; }
+.rc-actions { display: flex; gap: 4px; margin-left: auto; }
+.rc-copy-btn {
+  font: 600 10px/1 var(--sans);
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color .1s, background .1s;
+}
+.rc-copy-btn:hover { color: var(--text); background: var(--surface3); }
 .cs-result-body, .cve-result-body, .lql-result-body {
   padding: 8px 12px;
   max-height: 320px;
@@ -1027,7 +1069,13 @@ a.ext-link:hover { color: var(--accent-d); }
   </div>
 </div>
 
-<div id="log"></div>
+<div id="log-tabs">
+  <button class="log-tab active" data-pane="latest">Latest</button>
+  <button class="log-tab"        data-pane="all">History</button>
+</div>
+
+<div id="log-latest" class="log-pane active"></div>
+<div id="log-all"    class="log-pane"></div>
 
 <div id="input-row">
   <textarea id="prompt" placeholder="Ask about your cloud security posture… (Enter to send)" rows="1"></textarea>
