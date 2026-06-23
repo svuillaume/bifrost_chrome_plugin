@@ -1592,7 +1592,12 @@ async function runCveSearch() {
       noResultEl.className = 'cve-summary';
       noResultEl.textContent = data.note || `No hosts found for ${cveId} in the selected window.`;
       if (fgOutbreaks.length) {
-        noResultEl.textContent += ` FortiGuard has ${fgOutbreaks.length} outbreak alert(s) for this CVE.`;
+        const fgLink = document.createElement('a');
+        fgLink.href = fgOutbreaks[0].link || `https://www.fortiguard.com/outbreak-alert?type=vulnerability`;
+        fgLink.target = '_blank';
+        fgLink.textContent = `FortiGuard has ${fgOutbreaks.length} outbreak alert(s) for this CVE.`;
+        fgLink.style.cssText = 'color:#cc0000;font-weight:600;margin-left:4px;';
+        noResultEl.appendChild(fgLink);
       }
       appendResultCard('🔬', `CVE: ${cveId}`, noResultEl);
       setStatus('—');
