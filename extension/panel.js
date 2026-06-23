@@ -1048,36 +1048,27 @@ el('cve-analyse').addEventListener('click', () => {
 });
 
 function buildCveAnalysisPrompt(d) {
+  const fixVer = d.hosts.find(h => h.fix_available)?.fixed_version || 'latest';
   const lines = [
-    `FortiCNAPP vulnerability scan results for **${d.cveId}** (last ${d.period_days} days).`,
+    `${d.cveId} — ${d.total_affected} hosts affected, ${d.internet_exposed} internet-exposed, ${d.fixable} fixable (last ${d.period_days} days).`,
     ``,
-    `Summary: ${d.total_affected} affected hosts | ${d.internet_exposed} internet-exposed | ${d.fixable} fixable | ${d.total_containers} containers`,
-    ``,
-    `Affected hosts (internet-exposed first):`,
   ];
 
   d.hosts.forEach((h, i) => {
-    const flags = [];
-    if (h.host_exposed)      flags.push('HOST-INTERNET-EXPOSED');
-    if (h.container_exposed) flags.push('CONTAINER-INTERNET-EXPOSED');
-    if (h.fix_available)     flags.push(`fixable→${h.fixed_version}`);
-    lines.push(
-      `${i + 1}. ${h.hostname}  [${h.severity}]  risk:${h.host_risk_score.toFixed(1)}` +
-      (flags.length ? `  ⚠ ${flags.join(' | ')}` : '') +
-      `  account:${h.account}  region:${h.region}`
-    );
-    h.packages.forEach(p => lines.push(`   pkg: ${p.name} ${p.version}`));
-    h.containers.forEach(c => lines.push(
-      `   container: ${c.name}  image:${c.image}` +
-      (c.internet_exposed ? '  🌐 INTERNET-EXPOSED' : '')
-    ));
+    const flags = [
+      h.host_exposed      ? 'HOST-EXPOSED'      : '',
+      h.container_exposed ? 'CONTAINER-EXPOSED' : '',
+      h.fix_available     ? `fix→${h.fixed_version}` : '',
+    ].filter(Boolean).join(' ');
+    lines.push(`${i + 1}. ${h.hostname} [${h.severity}] risk:${h.host_risk_score.toFixed(1)} ${flags}`);
+    h.packages.forEach(p  => lines.push(`   pkg: ${p.name} ${p.version}`));
+    h.containers.forEach(c => lines.push(`   ctr: ${c.name} ${c.internet_exposed ? '🌐' : ''}`));
   });
 
-  lines.push(``, `Tasks:`);
-  lines.push(`1. Produce an ASCII architecture diagram showing affected hosts, their containers, trust boundaries (VPC / public internet), and which paths are internet-exposed (mark in red). Show CVE package on each affected node.`);
-  lines.push(`2. Rank the top 3 highest-risk hosts and explain why.`);
-  lines.push(`3. State the recommended remediation (patch to ${d.hosts.find(h => h.fix_available)?.fixed_version || 'fixed version'} where available).`);
-  lines.push(`4. Flag any internet-exposed containers running on vulnerable hosts as critical priority.`);
+  lines.push(``, `Be succinct. Provide:`);
+  lines.push(`1. Top 3 highest-risk hosts and why.`);
+  lines.push(`2. Remediation: patch to ${fixVer}.`);
+  lines.push(`3. Any internet-exposed containers — flag as critical.`);
 
   return lines.join('\n');
 }
