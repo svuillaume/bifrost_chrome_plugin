@@ -6,9 +6,9 @@ Browser-native AI security assistant — Claude chat + live FortiCNAPP cloud sec
 
 ```
 Chrome Extension (side panel)
-  │
-  ├─ Chat ──────────► AI Gateway  (Bifrost / Portkey / LiteLLM / Helicone)
-  │                        └──► Claude API
+  │                                                                            Deepseek
+  ├─ Chat ──────────► AI Gateway  (Bifrost / Portkey / LiteLLM / Helicone) --> OpenAI, Gemini
+  │                                                                            Claude API
   │
   └─ Security tools ► serve.py  localhost:8765
                            ├──► FortiCNAPP REST API
@@ -16,7 +16,8 @@ Chrome Extension (side panel)
                            └──► SearXNG       localhost:8080
 ```
 
-`serve.py` is a zero-dependency Python stdlib HTTP server. It auto-detects `~/.lacework.toml` at startup and exposes `lw_ready` to the extension — security tool buttons are greyed out when credentials are absent.
+`serve.py` is a zero-dependency Python stdlib HTTP server. To enable FortiCNAPP Security feature in the Web AI Agent you must have FortiCNAPP API Ke credantials set - the tool auto-detects `~/.lacework.toml` at startup and exposes `lw_ready` to the extension — security tool buttons are greyed out when credentials are absent.
+
 
 ## Features
 
@@ -24,10 +25,10 @@ Chrome Extension (side panel)
 |---|---|---|
 | 📄 Read | — | Load current page into chat context |
 | TL;DR | — | Summarise page in 3–5 bullets with source links |
-| 🛡 Scan | 🔑 FortiCNAPP | SCA + SAST on code found on this page |
-| 📋 Compliance | 🔑 FortiCNAPP | Generate + download compliance PDF |
-| 🚨 CVE | 🔑 FortiCNAPP | Attack surface: hosts & containers by internet exposure |
-| 🔍 LQL | 🔑 FortiCNAPP | Run saved or AI-generated LQL queries |
+| 🛡 Scan | FortiCNAPP | SCA + SAST on code found on this page |
+| 📋 Compliance | FortiCNAPP | Generate + download compliance PDF |
+| 🚨 CVE |  FortiCNAPP | Attack surface: hosts & containers by Internet Exposure |
+| 🔍 LQL |  FortiCNAPP | Run saved or AI-generated LQL queries |
 | ✕ Clear | — | Clear chat history |
 
 ## AI Gateway Compatibility
@@ -36,12 +37,12 @@ Set your gateway in the config bar — headers are built automatically.
 
 | Gateway | Auth sent | Key format |
 |---|---|---|
-| ⚡ Bifrost | `x-api-key` | `sk-bf-…` |
+| Bifrost | `x-api-key` | `sk-bf-…` |
 | Portkey | `x-portkey-api-key` | `pk-…` |
 | LiteLLM | `Authorization: Bearer` | `sk-…` |
 | Helicone | `x-api-key` + `helicone-auth: Bearer` | Anthropic key + Helicone key |
 
-Gateway choice and model selection persist across Chrome sessions (`chrome.storage.local`). The API key is kept in session RAM only — cleared on Chrome close.
+AI Gateway choice and model selection persist across Chrome sessions (`chrome.storage.local`). The API key is kept in session RAM only — cleared on Chrome close.
 
 ## Setup
 
@@ -57,7 +58,7 @@ LQL_QUERIES_DIR=/lql_queries
 
 FortiCNAPP credentials go in `~/.lacework.toml` (standard `lacework configure` output). The container mounts it read-only.
 
-### 2. Start the backend
+### 2. Start the backend On Endpoint 
 
 ```bash
 docker compose up -d
