@@ -763,7 +763,9 @@ If the objective involves CVE vulnerabilities (e.g. "hosts with CVE-xxx", "vulne
 
 ━━ LQL SYNTAX ━━
 Structure:       { source { DATASOURCE } filter { conditions } return distinct { columns } }
-Multi-source:    { source { DS_A a WITH DS_B b ON b.KEY = a.KEY } ... }   — left outer join
+Multi-source:    { source { DS_A with DS_B } ... }   — left outer join on a PRE-DEFINED connection; Lacework hardcodes which datasources can link
+                 { source { DS_A with DS_B on '(default)' } ... }   — explicit connection name (string, not a column expression)
+                 ON does NOT accept column = column expressions — it only accepts a quoted connection name like '(default)'
 Array expand:    { source { DS d array_to_rows(d.FIELD:arraypath) as elem } ... }
 
 Comparison:      =  !=  <  <=  >  >=  IS NULL  IS NOT NULL  IS JSON NULL
@@ -779,6 +781,15 @@ CRITICAL RULES — violations cause parse errors:
 - NEVER use array wildcard syntax [*] or [0] — LQL does NOT support array indexing in filters
   BAD: RESOURCE_CONFIG:BlockDeviceMappings[*].Ebs.Encrypted::String
   GOOD: query a dedicated per-resource datasource (e.g. LW_CFG_AWS_EC2_VOLUMES) or use array_to_rows()
+- WITH join syntax: ON accepts ONLY a quoted connection-name string (e.g. on '(default)'), NEVER a column = column expression
+  LQL joins are pre-defined by Lacework — you cannot create arbitrary joins between unrelated datasources
+  BAD: DS_A a WITH DS_B b ON b.RESOURCE_ID = a.RESOURCE_ID   (column expression — parse error)
+  BAD: DS_A a WITH DS_B b ON b.RESOURCE_CONFIG:X = a.FIELD   (RESOURCE_CONFIG in ON — parse error)
+  GOOD: DS_A with DS_B   (default connection, if one exists)
+  GOOD: DS_A with DS_B on '(default)'   (explicit default connection name)
+  BEST: avoid joins entirely — pick a single datasource that already contains all needed fields
+  EXAMPLE: for EC2 + volume encryption, use LW_CFG_AWS_EC2_VOLUMES alone (has RESOURCE_REGION + Encrypted + State)
+  EXAMPLE: for S3 public access, use LW_CFG_AWS_S3_GET_PUBLIC_ACCESS_BLOCK alone (has all 4 block settings)
 - NEVER use CONTAINS() function — use LIKE '%value%' instead
 - RLIKE: keyword form only — FIELD RLIKE 'regex'   (never RLIKE(field, 'regex'))
 - Null: test with IS NULL / IS NOT NULL, never = null
