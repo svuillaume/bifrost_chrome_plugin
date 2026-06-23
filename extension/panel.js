@@ -308,7 +308,7 @@ function appendTurn(role, text = '') {
   if (role === 'ai') {
     const makeCopyBtn = (targetBody) => {
       const btn = Object.assign(document.createElement('button'), {
-        className: 'bubble-copy-btn',
+        className: 'rc-copy-btn',
         textContent: '⎘',
         title: 'Copy response',
       });

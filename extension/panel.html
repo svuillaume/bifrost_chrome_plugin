@@ -723,22 +723,8 @@ body {
 .turn-user .turn-label  { text-align: right; color: var(--accent); }
 .turn-ai   .turn-label  { text-align: left;  color: #2563eb; }
 
-.bubble-copy-btn {
-  align-self: flex-start;
-  margin-top: 3px;
-  font: 600 10px/1 var(--sans);
-  padding: 2px 7px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
-  background: var(--surface2);
-  color: var(--dim);
-  cursor: pointer;
-  transition: color .1s, background .1s, border-color .1s;
-  letter-spacing: .02em;
-}
-.bubble-copy-btn:hover { color: var(--text); background: var(--surface3); border-color: var(--muted); }
-
 /* ── Bubble + label wrapper ── */
+.bubble-col .rc-copy-btn { margin-top: 3px; }
 .bubble-col {
   display: flex;
   flex-direction: column;
