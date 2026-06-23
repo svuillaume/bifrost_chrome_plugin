@@ -1168,15 +1168,16 @@ async function runCveSearch() {
 
     _lastCveData = data;
 
+    el('cve-panel').classList.remove('open');
+
     if (!data.hosts || !data.hosts.length) {
       statusEl.textContent = data.note || 'No results';
       statusEl.className   = '';
       setStatus('—');
-      resultsEl.innerHTML  = `<div class="cve-summary">${data.note || 'No affected hosts found.'}</div>`;
+      appendTurn('system', `🔬 ${cveId} — ${data.note || 'No affected hosts found.'}`);
       return;
     }
 
-    el('cve-panel').classList.remove('open');
     renderCveResults(data);
 
     const exp = data.internet_exposed;
@@ -1283,6 +1284,19 @@ function renderCveResults(data) {
     card.appendChild(body);
     resultsEl.appendChild(card);
   });
+
+  const analyseBtn = document.createElement('button');
+  analyseBtn.className   = 'cs-sbom-btn';
+  analyseBtn.textContent = '🔍 Analyse attack surface';
+  analyseBtn.style.marginTop = '8px';
+  analyseBtn.addEventListener('click', () => {
+    const prompt = buildCveAnalysisPrompt(data);
+    history.push({ role: 'user', content: prompt });
+    appendTurn('user', `Analyse attack surface for ${data.cveId}`);
+    send(true);
+  });
+  resultsEl.appendChild(analyseBtn);
+
   appendResultCard('🔬', `CVE ${data.cveId}`, resultsEl);
 }
 
