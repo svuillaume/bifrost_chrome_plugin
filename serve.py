@@ -775,7 +775,12 @@ Set:             FIELD IN (v1, v2)  /  FIELD NOT IN (v1, v2)
 Range:           FIELD BETWEEN v1 AND v2
 Logic:           AND  OR  NOT
 CASE:            CASE WHEN cond THEN val ELSE other END
-Cast:            FIELD:json.nested.key::String   — types: String, Number  (Boolean cast is UNSUPPORTED — compare against 'true'/'false' strings instead)
+Cast:            FIELD:json.nested.key::String   — types: String, Number only
+                 NEVER cast a JSON boolean field with ::String or ::Boolean — both cause parse errors
+                 JSON booleans (true/false) stored in RESOURCE_CONFIG are already comparable as strings without any cast
+                 BAD: RESOURCE_CONFIG:Encrypted::String = 'false'
+                 BAD: RESOURCE_CONFIG:Encrypted::Boolean = false
+                 GOOD: RESOURCE_CONFIG:Encrypted = 'false'
 
 CRITICAL RULES — violations cause parse errors:
 - NEVER use array wildcard syntax [*] or [0] — LQL does NOT support array indexing in filters
@@ -859,6 +864,7 @@ Storage:
   LW_CFG_AWS_S3_GET_BUCKET_VERSIONING        — S3 versioning; RESOURCE_CONFIG:Status::String ('Enabled' or 'Suspended')
   LW_CFG_AWS_S3_GET_PUBLIC_ACCESS_BLOCK      — per-bucket public access block settings
   LW_CFG_AWS_S3CONTROL_GET_PUBLIC_ACCESS_BLOCK — account-level S3 public access block
+  NOTE for S3 public access: LW_CFG_AWS_S3_GET_PUBLIC_ACCESS_BLOCK has RESOURCE_CONFIG:BlockPublicAcls = 'true'/'false', IgnorePublicAcls = 'true'/'false', BlockPublicPolicy = 'true'/'false', RestrictPublicBuckets = 'true'/'false' — NO ::String cast needed
   LW_CFG_AWS_RDS_DB_INSTANCES                 — RDS instances; RESOURCE_CONFIG:StorageEncrypted = 'true'/'false', MultiAZ = 'true'/'false', PubliclyAccessible = 'true'/'false'
   LW_CFG_AWS_RDS_CLUSTERS                     — RDS Aurora clusters
   LW_CFG_AWS_RDS_DB_SNAPSHOTS                 — RDS snapshots
