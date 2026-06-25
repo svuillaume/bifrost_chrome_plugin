@@ -235,6 +235,8 @@ async function showGreeting() {
 
 • 📄 **Read** / **TL;DR** — load the current page into context or generate a concise summary
 • 🛡 **Scan Code** — run SCA and SAST scans against code found on the current page or a GitHub repository
+  - SAST: Go · Java · JavaScript · PHP · Python · TypeScript
+  - SCA: .NET · C/C++ · Go · Java · Node.js · PHP · Python · Ruby · Rust
 • 🔰 **FortiCNAPP Security Tools** (Cloud Security) — run compliance reports, search CVEs, execute LQL queries, and investigate cloud assets, vulnerabilities, risks, and security posture
 
 Type anything to get started.`);
@@ -857,10 +859,12 @@ function guessFilename(snippet, index) {
   if (/^# This file is automatically/m.test(snippet) &&
       /version\s*=\s*\d/.test(snippet))                         return 'Pipfile.lock';
 
-  // Source files
+  // Source files — SAST languages first (Go, Java, JS, PHP, Python, TypeScript)
+  if (/^\s*package\s+\w+\s*\nimport\s+[("]/m.test(snippet) ||
+      /^\s*func\s+\w+\(/.test(snippet))                            return `snippet${index}.go`;
   if (/^\s*(import|from\s+\S+\s+import|def |class |if __name__)/.test(snippet)) return `snippet${index}.py`;
+  if (/^\s*(import\s+\{|export\s+(default|const|function|class)|interface\s+\w|:\s*(string|number|boolean)\b)/.test(snippet)) return `snippet${index}.ts`;
   if (/^\s*(const|let|var|function\s|\(.*\)\s*=>|require\()/.test(snippet))      return `snippet${index}.js`;
-  if (/^\s*(import\s+\{|export\s+(default|const|function)|interface\s+\w)/.test(snippet)) return `snippet${index}.ts`;
   if (/^\s*(package\s+\w|import\s+java\.|public\s+(class|interface))/.test(snippet))      return `snippet${index}.java`;
   if (/<\?php/.test(snippet))                                    return `snippet${index}.php`;
   if (/^\s*(resource|provider|variable|module|terraform)\s+"/.test(snippet))     return `snippet${index}.tf`;
@@ -871,25 +875,55 @@ function guessFilename(snippet, index) {
 
 // ── GitHub repo scanner ───────────────────────────────────────────────────
 
+// SCA manifest filenames — lacework SCA must see the exact filename to parse them.
+// Sources: https://docs.fortinet.com/document/forticnapp/latest/administration-guide/sca-languages
 const MANIFEST_NAMES = new Set([
+  // Python
   'requirements.txt', 'requirements-dev.txt', 'requirements-test.txt',
   'Pipfile', 'Pipfile.lock', 'setup.py', 'setup.cfg', 'pyproject.toml',
+  'poetry.lock', 'uv.lock',
+  // Node.js
   'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+  // Go
   'go.mod', 'go.sum',
+  // Java
   'pom.xml', 'build.gradle', 'build.gradle.kts', 'settings.gradle',
+  // Rust
   'Cargo.toml', 'Cargo.lock',
+  // Ruby
   'Gemfile', 'Gemfile.lock',
+  // PHP
   'composer.json', 'composer.lock',
+  // .NET
+  'packages.lock.json', 'packages.config',
+  // C/C++
+  'conan.lock', 'conanfile.txt', 'conanfile.py',
+  // Misc / containers
   'Chart.yaml', 'Chart.lock',
   'Dockerfile', '.dockerignore',
 ]);
+// Suffix-matched manifest patterns (checked separately below)
+const MANIFEST_SUFFIXES = [
+  '.deps.json',       // .NET DotNet Core
+  '.gradle.lockfile', // Java Gradle
+];
+// SAST source extensions: Go, Java, JS, PHP, Python, TypeScript
+// SCA catches manifests above; source exts are for SAST + context
 const SOURCE_EXTS = new Set([
-  '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.go', '.rb', '.php',
-  '.tf', '.rs', '.cs', '.cpp', '.c', '.h', '.yaml', '.yml',
+  '.go',
+  '.java',
+  '.js', '.jsx', '.mjs', '.cjs',
+  '.ts', '.tsx', '.mts', '.cts',
+  '.php',
+  '.py',
+  // Extra useful for context / IaC
+  '.tf', '.rs', '.cs', '.cpp', '.c', '.h', '.rb',
+  '.yaml', '.yml',
 ]);
 const SKIP_DIRS = new Set([
   'node_modules', '.git', 'vendor', 'dist', 'build', '__pycache__',
-  '.venv', 'venv', 'env', 'coverage', '.nyc_output',
+  '.venv', 'venv', 'env', 'coverage', '.nyc_output', '.cache',
+  'target', 'out', 'bin', 'obj',
 ]);
 
 function githubRepoFromUrl(url) {
@@ -922,26 +956,41 @@ async function fetchGithubRepoFiles(owner, repo, branchHint) {
   const tree = await treeRes.json();
 
   // Select which files to fetch: all manifests + source files (skip large/binary/vendor)
+  const isManifest = (name) =>
+    MANIFEST_NAMES.has(name) || MANIFEST_SUFFIXES.some(s => name.endsWith(s));
+
   const candidates = (tree.tree || []).filter(item => {
     if (item.type !== 'blob') return false;
-    if (item.size > 200_000) return false; // skip files >200 KB
+    if (item.size > 500_000) return false; // skip files >500 KB
     const parts = item.path.split('/');
     if (parts.some(p => SKIP_DIRS.has(p))) return false;
     const name = parts[parts.length - 1];
     const ext  = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
-    return MANIFEST_NAMES.has(name) || SOURCE_EXTS.has(ext);
+    return isManifest(name) || SOURCE_EXTS.has(ext);
   });
 
-  // Prioritise manifests, then source — cap total at 80 files to stay fast
-  const manifests = candidates.filter(f => {
+  // Prioritise manifests; then source files sorted by extension priority
+  // (SAST langs first so they're never starved by IaC/misc files)
+  const SAST_EXTS = new Set(['.go', '.java', '.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts', '.php', '.py']);
+  const manifests = candidates.filter(f => isManifest(f.path.split('/').pop()));
+  const sastSources = candidates.filter(f => {
     const name = f.path.split('/').pop();
-    return MANIFEST_NAMES.has(name);
+    if (isManifest(name)) return false;
+    const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+    return SAST_EXTS.has(ext);
   });
-  const sources = candidates.filter(f => {
+  const otherSources = candidates.filter(f => {
     const name = f.path.split('/').pop();
-    return !MANIFEST_NAMES.has(name);
+    if (isManifest(name)) return false;
+    const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+    return !SAST_EXTS.has(ext);
   });
-  const selected = [...manifests, ...sources].slice(0, 80);
+  // Cap: all manifests + up to 120 SAST sources + up to 20 other sources
+  const selected = [
+    ...manifests,
+    ...sastSources.slice(0, 120),
+    ...otherSources.slice(0, 20),
+  ].slice(0, 150);
 
   // Fetch file contents in parallel batches of 10
   const files = [];
@@ -954,7 +1003,9 @@ async function fetchGithubRepoFiles(owner, repo, branchHint) {
         const r = await fetch(rawUrl);
         if (!r.ok) return null;
         const code = await r.text();
-        return { filename: item.path.split('/').pop(), code, path: item.path };
+        // Send full relative path so serve.py can preserve directory structure
+        // and lacework SAST can resolve cross-file references correctly.
+        return { filename: item.path, code, path: item.path };
       } catch { return null; }
     }));
     files.push(...results.filter(Boolean));
@@ -1123,10 +1174,45 @@ function renderCodeSecResults(data, mode, ghCtx, scannedFiles) {
       appendResultCard('📦', 'FortiCNAPP SBOM', body);
       return;
     }
+
+    // Non-JSON formats: show raw output with download/copy
+    if (data._raw !== undefined) {
+      const fmt = data._format || 'sbom';
+      const extMap = { 'cdx-xml': 'xml', 'spdx-json': 'json', 'spdx-tag': 'spdx', 'spdx-yaml': 'yaml', sarif: 'json', 'lw-json': 'json', 'gitlab-json': 'json' };
+      const ext = extMap[fmt] || 'txt';
+      const title = document.createElement('div');
+      title.className = 'cs-section-title';
+      title.textContent = `SBOM (${fmt})`;
+      body.appendChild(title);
+      const actions = document.createElement('div');
+      actions.className = 'cs-sbom-actions';
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'cs-sbom-btn';
+      dlBtn.textContent = `⬇ Download .${ext}`;
+      dlBtn.addEventListener('click', () => {
+        const blob = new Blob([data._raw], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        chrome.downloads ? chrome.downloads.download({ url, filename: `sbom.${fmt}.${ext}` })
+                         : chrome.tabs.create({ url });
+      });
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'cs-sbom-btn';
+      copyBtn.textContent = '📋 Copy';
+      copyBtn.addEventListener('click', () => navigator.clipboard.writeText(data._raw));
+      actions.append(dlBtn, copyBtn);
+      body.appendChild(actions);
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'font-size:10px;overflow-x:auto;max-height:200px;background:var(--surface3);padding:6px;border-radius:4px;margin-top:4px;';
+      pre.textContent = data._raw.slice(0, 3000) + (data._raw.length > 3000 ? '\n…(truncated)' : '');
+      body.appendChild(pre);
+      appendResultCard('📦', 'FortiCNAPP SBOM', body);
+      return;
+    }
+
     const components = data.components || [];
     const title = document.createElement('div');
     title.className = 'cs-section-title';
-    title.textContent = `CycloneDX SBOM — ${components.length} component${components.length !== 1 ? 's' : ''}`;
+    title.textContent = `SBOM (cdx-json) — ${components.length} component${components.length !== 1 ? 's' : ''}`;
     body.appendChild(title);
 
     const actions = document.createElement('div');
@@ -1137,7 +1223,7 @@ function renderCodeSecResults(data, mode, ghCtx, scannedFiles) {
     dlBtn.addEventListener('click', () => {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url  = URL.createObjectURL(blob);
-      chrome.downloads ? chrome.downloads.download({ url, filename: 'sbom.cyclonedx.json' })
+      chrome.downloads ? chrome.downloads.download({ url, filename: 'sbom.cdx-json.json' })
                        : chrome.tabs.create({ url });
     });
     const copyBtn = document.createElement('button');
@@ -1304,13 +1390,15 @@ async function runCodeSec(mode) {
       return;
     }
 
+    const sbomFmt = el('sbom-format')?.value || 'cdx-json';
     const res = await fetch(`${BASE_URL}/${mode === 'sbom' ? 'sbom' : 'codesec'}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ files }),
+      body:    JSON.stringify({ files, ...(mode === 'sbom' ? { format: sbomFmt } : {}) }),
     });
     if (!res.ok) throw new Error(`Scan endpoint returned ${res.status}`);
-    const data = await res.json();
+    const contentType = res.headers.get('content-type') || '';
+    const data = contentType.includes('application/json') ? await res.json() : { _raw: await res.text(), _format: sbomFmt };
     try {
       renderCodeSecResults(data, mode, ghCtx, files);
     } catch (renderErr) {

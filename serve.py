@@ -324,17 +324,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self.rfile.read(length)
 
     def _write_files(self, tmpdir, payload):
-        """Write files array [{filename, code}] or legacy {filename, code} to tmpdir."""
+        """Write files array [{filename, code}] or legacy {filename, code} to tmpdir.
+
+        filename may be a relative path (e.g. src/index.js) — directory structure
+        is preserved so lacework SAST can resolve cross-file references. Path components
+        are sanitised to prevent traversal outside tmpdir.
+        """
+        def safe_path(raw_name, fallback='snippet.txt'):
+            # Strip leading slashes/dots, then join under tmpdir
+            parts = [p for p in raw_name.replace('\\', '/').split('/')
+                     if p and p != '.' and p != '..']
+            if not parts:
+                parts = [fallback]
+            dest = os.path.join(tmpdir, *parts)
+            # Verify still inside tmpdir
+            if not os.path.realpath(dest).startswith(os.path.realpath(tmpdir)):
+                dest = os.path.join(tmpdir, fallback)
+            return dest
+
         files = payload.get('files')
         if files:
             for entry in files:
-                name = os.path.basename(entry.get('filename', 'snippet.txt'))
-                path = os.path.join(tmpdir, name)
-                with open(path, 'w') as f:
+                dest = safe_path(entry.get('filename', 'snippet.txt'))
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, 'w') as f:
                     f.write(entry.get('code', ''))
         else:
-            name = os.path.basename(payload.get('filename', 'snippet.txt'))
-            with open(os.path.join(tmpdir, name), 'w') as f:
+            dest = safe_path(payload.get('filename', 'snippet.txt'))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, 'w') as f:
                 f.write(payload.get('code', ''))
 
     def serve_codesec(self):
@@ -351,12 +369,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         tmpdir = tempfile.mkdtemp(prefix='webai-codesec-')
         try:
             self._write_files(tmpdir, payload)
-            # Collect submitted filenames for the response
+            # Collect submitted filenames for the response (preserve relative paths)
             files_list = payload.get('files')
             if files_list:
-                submitted_files = [os.path.basename(e.get('filename', 'snippet.txt')) for e in files_list]
+                submitted_files = [e.get('filename', 'snippet.txt') for e in files_list]
             else:
-                submitted_files = [os.path.basename(payload.get('filename', 'snippet.txt'))]
+                submitted_files = [payload.get('filename', 'snippet.txt')]
             filename = submitted_files[0] if len(submitted_files) == 1 else submitted_files
 
             out_json = os.path.join(tmpdir, 'sca.json')
@@ -428,7 +446,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
     def serve_sbom(self):
-        """Accept JSON {files:[{filename,code}]}, return CycloneDX SBOM from lacework SCA."""
+        """Accept JSON {files:[{filename,code}], format?}, return SBOM via lacework SCA."""
         if not shutil.which('lacework'):
             self.send_json(503, json.dumps({'error': 'lacework CLI not found'}).encode())
             return
@@ -438,22 +456,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_error(400, 'Expected JSON {files:[{filename,code}]}')
             return
 
+        VALID_FORMATS = {'sarif', 'cdx-xml', 'cdx-json', 'spdx-json', 'spdx-tag', 'spdx-yaml', 'lw-json', 'gitlab-json'}
+        fmt = payload.get('format', 'cdx-json')
+        if fmt not in VALID_FORMATS:
+            self.send_error(400, f'Unknown SBOM format: {fmt}')
+            return
+
+        EXT_MAP = {'cdx-xml': 'xml', 'spdx-json': 'json', 'spdx-tag': 'spdx',
+                   'spdx-yaml': 'yaml', 'sarif': 'json', 'lw-json': 'json',
+                   'gitlab-json': 'json', 'cdx-json': 'json'}
+        ext = EXT_MAP.get(fmt, 'json')
+
         tmpdir = tempfile.mkdtemp(prefix='webai-sbom-')
         try:
             self._write_files(tmpdir, payload)
 
-            out_json = os.path.join(tmpdir, 'sbom.json')
+            out_file = os.path.join(tmpdir, f'sbom.{ext}')
             cmd = ['lacework', 'sca', 'scan', tmpdir,
                    '--deployment=offprem', '--noninteractive',
-                   '--save-results=false', '-f', 'cdx-json', '-o', out_json]
+                   '--save-results=false', '-f', fmt, '-o', out_file]
             if LW_PROFILE:
                 cmd += ['--profile', LW_PROFILE]
-            result   = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
-            if os.path.exists(out_json):
-                with open(out_json) as f:
-                    sbom = json.load(f)
-                self.send_json(200, json.dumps(sbom).encode())
+            if os.path.exists(out_file):
+                with open(out_file) as f:
+                    raw = f.read()
+                if fmt == 'cdx-json':
+                    self.send_json(200, raw.encode())
+                else:
+                    encoded = raw.encode()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                    self.send_header('Content-Length', str(len(encoded)))
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(encoded)
             else:
                 self.send_json(200, json.dumps({
                     'error':  'no SBOM generated — no packages detected in snippet',

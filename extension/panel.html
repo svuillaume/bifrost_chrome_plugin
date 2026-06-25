@@ -236,6 +236,20 @@ body {
 .fcnapp-item.accent:hover { color: var(--accent); background: var(--accent-bg); }
 .fcnapp-item.success:hover{ color: var(--ok);     background: var(--ok-bg); }
 .fcnapp-item.danger:hover { color: var(--err);    background: var(--err-bg); }
+.fcnapp-sbom-row { display: flex; align-items: center; gap: 2px; }
+.fcnapp-sbom-row #sbom { flex: 1; }
+.sbom-fmt-select {
+  font-family: var(--sans);
+  font-size: 10px;
+  background: var(--surface3);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 4px;
+  cursor: pointer;
+  max-width: 100px;
+  flex-shrink: 0;
+}
 
 /* ── Drawers (shared) ────────────────────────────────────────────────────── */
 .drawer {
@@ -1128,8 +1142,20 @@ a.ext-link:hover { color: var(--accent-d); }
   <div id="fcnapp-wrap">
     <button id="fcnapp-btn" class="chip accent" title="FortiCNAPP tools"> FortiCNAPP <span class="caret">▼</span></button>
     <div id="fcnapp-menu">
-      <button id="codesec"    class="fcnapp-item accent"  title="SCA + SAST scan on code found on this page"> CodeScan</button>
-      <button id="sbom"       class="fcnapp-item accent"  title="Generate a CycloneDX SBOM from code found on this page"> SBOM Gen</button>
+      <button id="codesec"    class="fcnapp-item accent"  title="SCA + SAST scan on code found on this page&#10;&#10;SAST languages: Go, Java, JavaScript, PHP, Python, TypeScript&#10;&#10;SCA languages: .NET (deps.json, packages.lock.json), C/C++ (conan.lock), Go (go.mod, go.sum), Java (Gradle, Maven, Bazel), Node.js (package-lock.json, pnpm-lock.yaml, yarn.lock), PHP (composer.lock), Python (requirements.txt, Pipfile.lock, poetry.lock, uv.lock), Ruby (Gemfile.lock), Rust (Cargo.lock)"> CodeScan</button>
+      <div class="fcnapp-sbom-row">
+        <button id="sbom" class="fcnapp-item accent" title="Generate SBOM in the selected format from code found on this page&#10;&#10;Formats: CycloneDX (cdx-json, cdx-xml), SPDX (spdx-json, spdx-tag, spdx-yaml), SARIF, Lacework (lw-json), GitLab (gitlab-json)"> SBOM Gen</button>
+        <select id="sbom-format" class="sbom-fmt-select" title="SBOM output format">
+          <option value="cdx-json">CycloneDX JSON</option>
+          <option value="cdx-xml">CycloneDX XML</option>
+          <option value="spdx-json">SPDX JSON</option>
+          <option value="spdx-tag">SPDX Tag</option>
+          <option value="spdx-yaml">SPDX YAML</option>
+          <option value="sarif">SARIF</option>
+          <option value="lw-json">Lacework JSON</option>
+          <option value="gitlab-json">GitLab JSON</option>
+        </select>
+      </div>
       <button id="compliance" class="fcnapp-item success" title="Generate compliance PDF report"> Compliance Report</button>
       <button id="lql"        class="fcnapp-item accent"  title="Run LQL queries against your tenant"> Advanced Analytics</button>
       <button id="cve-btn"    class="fcnapp-item danger"  title="CVE attack surface across hosts &amp; containers"> Enriched Attack Threat Surface</button>
