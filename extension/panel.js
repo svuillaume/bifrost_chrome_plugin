@@ -2609,38 +2609,6 @@ el('lql-objective').addEventListener('keydown', e => {
   if (e.key === 'Enter') el('lql-gen-btn').click();
 });
 
-function _extractPdfTextFallback(b64) {
-  // Decode base64 → binary string, then pull text from PDF content streams.
-  // PDF streams contain human-readable text between BT/ET markers as Tj/TJ operators.
-  try {
-    const binary = atob(b64);
-    // Extract content between stream / endstream markers
-    const chunks = [];
-    const streamRe = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-    let m;
-    while ((m = streamRe.exec(binary)) !== null) {
-      const chunk = m[1];
-      // Pull Tj / TJ text operators: (text)Tj  or [(text)]TJ
-      const tjRe = /\(([^)]{1,400})\)\s*Tj/g;
-      const tjmRe = /\[([^\]]{1,800})\]\s*TJ/g;
-      let t;
-      while ((t = tjRe.exec(chunk))  !== null) chunks.push(t[1]);
-      while ((t = tjmRe.exec(chunk)) !== null) {
-        // TJ arrays contain (text) fragments interleaved with kerning numbers
-        const parts = t[1].match(/\(([^)]{1,200})\)/g) || [];
-        chunks.push(parts.map(p => p.slice(1, -1)).join(''));
-      }
-    }
-    // Unescape PDF string escapes and join
-    return chunks
-      .map(s => s.replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\t/g, ' ')
-                 .replace(/\\\(/g, '(').replace(/\\\)/g, ')').replace(/\\\\/g, '\\'))
-      .filter(s => s.trim().length > 1)
-      .join('\n');
-  } catch (e) {
-    return '';
-  }
-}
 
 async function loadCompliancePdfText(reportName) {
   appendTurn('system', `📖 Loading "${reportName}" into context…`);
@@ -2656,19 +2624,6 @@ async function loadCompliancePdfText(reportName) {
         : data.text;
       history.push({ role: 'user', content: `Here is the content of the compliance report "${data.name}":\n\n${text}\n\nAsk me anything about this report.` });
       appendTurn('system', `✓ "${data.name}" loaded — ask your questions below.`);
-    } else if (data.base64) {
-      // pdftotext not available — decode base64 and extract readable text from PDF binary
-      const text = _extractPdfTextFallback(data.base64);
-      if (text.length > 200) {
-        const MAX = 40000;
-        const truncated = text.length > MAX
-          ? text.slice(0, MAX) + `\n\n[Truncated — ${text.length} chars total]`
-          : text;
-        history.push({ role: 'user', content: `Here is the content of the compliance report "${data.name}" (extracted from PDF):\n\n${truncated}\n\nAsk me anything about this report.` });
-        appendTurn('system', `✓ "${data.name}" loaded (client-side extraction) — ask your questions below.`);
-      } else {
-        appendTurn('system', `⚠ Could not extract text from PDF. Rebuild the Docker image to install pdftotext: docker compose up --build -d webai`);
-      }
     } else if (data.note) {
       appendTurn('system', `⚠ ${data.note}`);
     }

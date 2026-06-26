@@ -18,7 +18,7 @@ POST /lql/generate  → plain-English → LQL via Claude
 
 Usage: python3 serve.py  →  http://localhost:45321
 """
-import base64, http.server, io, json, os, re, shutil, socketserver, subprocess, tempfile, urllib.parse, urllib.request, urllib.error
+import base64, http.server, io, json, os, re, shutil, socketserver, struct, subprocess, tempfile, urllib.parse, urllib.request, urllib.error, zlib
 from datetime import datetime, timezone, timedelta
 
 PORT      = 45321
@@ -26,6 +26,53 @@ DIR       = os.path.dirname(os.path.abspath(__file__))
 
 _last_compliance_pdf: dict = {}
 HTML_FILE = os.path.join(DIR, 'chatbox.html')
+
+
+def _pdf_extract_text(pdf_bytes: bytes) -> str:
+    """Pure-Python PDF text extractor. Handles FlateDecode compressed streams.
+    Covers the vast majority of Lacework/FortiCNAPP compliance PDFs."""
+    chunks = []
+
+    # Find all stream … endstream blocks
+    for m in re.finditer(rb'stream\r?\n(.*?)\r?\nendstream', pdf_bytes, re.DOTALL):
+        raw = m.group(1)
+
+        # Try zlib decompress (FlateDecode) first; fall back to raw bytes
+        for data in _try_decompress(raw):
+            try:
+                text = data.decode('latin-1', errors='replace')
+            except Exception:
+                continue
+
+            # Extract text from PDF content operators: (str)Tj and [(str)]TJ
+            for tj in re.findall(r'\(([^)]{1,500})\)\s*Tj', text):
+                chunks.append(_pdf_unescape(tj))
+            for tj_arr in re.findall(r'\[([^\]]{1,2000})\]\s*TJ', text):
+                parts = re.findall(r'\(([^)]{1,300})\)', tj_arr)
+                if parts:
+                    chunks.append(_pdf_unescape(''.join(parts)))
+
+    # Join, collapse whitespace runs, return
+    result = '\n'.join(s for s in chunks if s.strip())
+    return re.sub(r'\n{3,}', '\n\n', result)
+
+
+def _try_decompress(data: bytes):
+    """Yield the decompressed data if zlib/deflate works, then the raw bytes."""
+    for wbits in (15, -15, 47):   # zlib, raw deflate, gzip
+        try:
+            yield zlib.decompress(data, wbits)
+            return
+        except Exception:
+            pass
+    yield data   # uncompressed stream
+
+
+def _pdf_unescape(s: str) -> str:
+    """Unescape PDF string escape sequences."""
+    return (s.replace('\\n', '\n').replace('\\r', '')
+             .replace('\\t', ' ').replace('\\(', '(')
+             .replace('\\)', ')').replace('\\\\', '\\'))
 
 def load_env():
     env = dict(os.environ)  # start with real env vars (Docker, systemd, etc.)
@@ -1043,6 +1090,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         pdf_bytes = _last_compliance_pdf['bytes']
         fw_name   = _last_compliance_pdf.get('name', 'Compliance Report')
+        # Prefer pdftotext for highest-quality extraction; fall back to pure-Python
         if shutil.which('pdftotext'):
             with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
                 f.write(pdf_bytes)
@@ -1053,15 +1101,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     capture_output=True, timeout=30)
                 text = result.stdout.decode('utf-8', errors='replace')
                 self.send_json(200, json.dumps({'name': fw_name, 'text': text}).encode())
+                return
             finally:
                 os.unlink(tmppath)
-        else:
-            self.send_json(200, json.dumps({
-                'name':   fw_name,
-                'text':   None,
-                'base64': base64.b64encode(pdf_bytes).decode(),
-                'note':   'Install pdftotext (poppler-utils) for text extraction',
-            }).encode())
+        # Pure-Python fallback: decompress FlateDecode streams then extract Tj/TJ text
+        text = _pdf_extract_text(pdf_bytes)
+        self.send_json(200, json.dumps({'name': fw_name, 'text': text or None}).encode())
 
     def serve_lql_cve(self):
         try:
