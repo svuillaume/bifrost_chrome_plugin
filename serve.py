@@ -711,6 +711,78 @@ class Handler(http.server.BaseHTTPRequestHandler):
             arns = list({str(r.get('RESOURCE_KEY') or r.get('ARN') or '')
                          for r in rows if r.get('RESOURCE_KEY') or r.get('ARN')} - {''})[:20]
 
+            # ── S3 sensitive-data correlation ─────────────────────────────────
+            # LQL can only see structural config (public access blocks, encryption).
+            # The Inventory API resourceConfig carries user-defined tags
+            # (DataClassification, Sensitivity, data-classification, etc.) and
+            # compliance status — fetch these per bucket and surface alongside the
+            # LQL exposure findings so Claude can correlate "this exposed bucket
+            # also contains PII-tagged objects".
+            is_s3_query = any(ds in qt_upper for ds in ('LW_CFG_AWS_S3', 'LW_CFG_AWS_S3CONTROL'))
+            if is_s3_query and arns:
+                s3_inv = self._call_lw_api(token, base_url, '/api/v2/Inventory/search', {
+                    'timeFilter': tf,
+                    'csp': 'AWS',
+                    'filters': [
+                        {'field': 'urn',          'expression': 'in',  'values': arns},
+                        {'field': 'resourceType', 'expression': 'rlike', 'value': '.*[Ss]3.*'},
+                    ],
+                    'returns': ['urn', 'resourceType', 'resourceRegion', 'csp',
+                                'service', 'status', 'apiKey', 'resourceConfig', 'cloudDetails'],
+                })
+                if s3_inv:
+                    # Extract tag-based data-classification hints from each bucket
+                    SENSITIVE_TAG_KEYS = {
+                        'dataclassification', 'data-classification', 'data_classification',
+                        'sensitivity', 'data-sensitivity', 'datasensitivity',
+                        'data-category', 'datacategory', 'pii', 'phi', 'pci',
+                        'classification', 'data-type', 'datatype',
+                    }
+                    SENSITIVE_TAG_VALUES = {
+                        'pii', 'phi', 'pci', 'sensitive', 'confidential', 'restricted',
+                        'private', 'internal', 'secret', 'high', 'critical',
+                    }
+                    classified = []
+                    for item in s3_inv:
+                        tags = {}
+                        # Tags live in resourceConfig.TagSet or cloudDetails.tags
+                        rc = item.get('resourceConfig') or {}
+                        tagset = rc.get('TagSet') or rc.get('Tags') or []
+                        if isinstance(tagset, list):
+                            tags = {t.get('Key', '').lower(): t.get('Value', '').lower()
+                                    for t in tagset if isinstance(t, dict)}
+                        elif isinstance(tagset, dict):
+                            tags = {k.lower(): v.lower() for k, v in tagset.items()}
+                        # Also check cloudDetails
+                        cd = item.get('cloudDetails') or {}
+                        cd_tags = cd.get('tags') or cd.get('TagSet') or {}
+                        if isinstance(cd_tags, dict):
+                            tags.update({k.lower(): v.lower() for k, v in cd_tags.items()})
+
+                        sensitive_tags = {k: v for k, v in tags.items()
+                                          if k in SENSITIVE_TAG_KEYS or v in SENSITIVE_TAG_VALUES}
+                        classified.append({
+                            'urn':            item.get('urn', ''),
+                            'resourceRegion': item.get('resourceRegion', ''),
+                            'status':         item.get('status', ''),
+                            'sensitive_tags': sensitive_tags,
+                            'has_sensitive_tags': bool(sensitive_tags),
+                        })
+
+                    sensitive_count = sum(1 for b in classified if b['has_sensitive_tags'])
+                    enrichment['s3_sensitive_data'] = {
+                        'count':           len(classified),
+                        'sensitive_count': sensitive_count,
+                        'description':     (
+                            f'{sensitive_count} of {len(classified)} exposed S3 buckets '
+                            f'carry data-classification tags indicating sensitive content'
+                            if sensitive_count else
+                            f'{len(classified)} exposed S3 buckets checked — '
+                            f'no data-classification tags found (buckets may be untagged)'
+                        ),
+                        'items': classified[:10],
+                    }
+
             # Inventory lookup per CSP (requires explicit csp field)
             if arns:
                 for csp in ('AWS', 'AZURE', 'GCP'):
@@ -1318,7 +1390,10 @@ Storage:
   CRITICAL for S3 public access block: all fields are nested under PublicAccessBlockConfiguration — RESOURCE_CONFIG:PublicAccessBlockConfiguration.BlockPublicAcls = 'true'/'false', RESOURCE_CONFIG:PublicAccessBlockConfiguration.BlockPublicPolicy = 'true'/'false', RESOURCE_CONFIG:PublicAccessBlockConfiguration.IgnorePublicAcls = 'true'/'false', RESOURCE_CONFIG:PublicAccessBlockConfiguration.RestrictPublicBuckets = 'true'/'false' — NO ::String cast needed
   CRITICAL for S3 policy status: IsPublic is nested under PolicyStatus — RESOURCE_CONFIG:PolicyStatus.IsPublic = 'true' NOT RESOURCE_CONFIG:IsPublic
   NOTE for S3 public access: join LW_CFG_AWS_S3 with LW_CFG_AWS_S3_GET_PUBLIC_ACCESS_BLOCK — this 2-source join works. Do NOT add a third source (e.g. LW_CFG_AWS_S3_GET_BUCKET_ENCRYPTION) — 3-source S3 joins fail with "Cannot find defined relationships". For sensitive data proxy: use the 2-source public access join alone and mention encryption separately in the report.
-  NOTE for S3 sensitive data: no native DSPM/data-classification LQL datasource exists. Best proxy = S3 buckets with public access block weakened (any PublicAccessBlockConfiguration field = 'false').
+  NOTE for S3 sensitive data — TWO-PRONGED APPROACH (LQL + API):
+    LQL covers structural exposure: use LW_CFG_AWS_S3 joined with LW_CFG_AWS_S3_GET_PUBLIC_ACCESS_BLOCK to find buckets with weakened public access controls. Return ARN as RESOURCE_KEY.
+    API enrichment (automatic): once the LQL runs, the backend automatically calls /api/v2/Inventory/search with resourceConfig and cloudDetails to retrieve bucket tags. Tags like DataClassification=PII, Sensitivity=High, data-classification=confidential appear in the api_enrichment.s3_sensitive_data field returned alongside the LQL results. Claude should correlate the two: "bucket X is publicly exposed (LQL) AND tagged as PII (Inventory API)".
+    No native DSPM/data-classification LQL datasource exists — tags are the only classification signal available via the API.
   LW_CFG_AWS_RDS_DB_INSTANCES                 — RDS instances; RESOURCE_CONFIG:StorageEncrypted = 'true'/'false', MultiAZ = 'true'/'false', PubliclyAccessible = 'true'/'false'
   LW_CFG_AWS_RDS_CLUSTERS                     — RDS Aurora clusters
   LW_CFG_AWS_RDS_DB_SNAPSHOTS                 — RDS snapshots
@@ -1543,16 +1618,26 @@ Respond with ONLY a valid JSON object — no markdown, no code fences, no explan
             messages = [{'role': 'user', 'content': f'<system>\n{system_prompt}\n</system>\n\nObjective: {objective}'}]
             result = _call_claude(messages)
 
-            # validate-then-fix loop — validate syntax first (fast), then run for real
-            MAX_RETRIES = 3
+            # validate-then-fix loop — validate syntax first (fast), then run for real.
+            # Each iteration: if an error occurs and retries remain, feed the error back to
+            # Claude and loop again with the corrected query. On the final attempt any
+            # remaining error is stored in last_err and surfaced to the caller.
+            MAX_RETRIES = 9
             cached_rows = None
+            last_err    = None
+            print(f'  [LQL] objective: {objective!r}')
             for attempt in range(MAX_RETRIES):
                 query_text = result.get('queryText', '')
                 if not query_text or result.get('queryId') == 'USE_CVE_TAB':
                     break
-                # Step 1: validate syntax before executing
+
+                print(f'  [LQL] attempt {attempt+1}/{MAX_RETRIES} — query: {query_text[:120].replace(chr(10)," ")}…')
+
+                # Step 1: validate syntax before executing (fast, no API call)
                 val_err = _validate_lql(query_text)
                 if val_err:
+                    last_err = val_err
+                    print(f'  [LQL]   ✗ validation error: {val_err}')
                     if attempt < MAX_RETRIES - 1:
                         hint = ''
                         if 'Cannot find defined relationships' in val_err:
@@ -1563,13 +1648,23 @@ Respond with ONLY a valid JSON object — no markdown, no code fences, no explan
                             f'That LQL query failed validation with this error:\n{val_err}{hint}\n\n'
                             'Fix the LQL and return only the corrected JSON object.'
                         )})
+                        print(f'  [LQL]   → asking Claude to fix (attempt {attempt+2})')
                         result = _call_claude(messages)
-                    continue
+                    continue  # re-enter loop with corrected result (or exit on final attempt)
+
+                print(f'  [LQL]   ✓ validation passed — running…')
+
                 # Step 2: run for real only after validation passes
                 rows, err = _run_lql(query_text)
                 if err is None:
+                    # rows=None means no CLI — let the extension call /lql/run itself
                     cached_rows = rows
+                    last_err    = None
+                    count = len(rows) if rows is not None else '(no CLI)'
+                    print(f'  [LQL]   ✓ run OK — {count} rows')
                     break
+                last_err = err
+                print(f'  [LQL]   ✗ run error: {err}')
                 if attempt < MAX_RETRIES - 1:
                     hint = ''
                     if 'Cannot find defined relationships' in err:
@@ -1583,7 +1678,14 @@ Respond with ONLY a valid JSON object — no markdown, no code fences, no explan
                         f'That LQL query failed with this error:\n{err}{hint}\n\n'
                         'Fix the LQL and return only the corrected JSON object.'
                     )})
+                    print(f'  [LQL]   → asking Claude to fix (attempt {attempt+2})')
                     result = _call_claude(messages)
+
+            # If all retries exhausted with an error, surface it rather than returning empty
+            if last_err and cached_rows is None and result.get('queryId') != 'USE_CVE_TAB':
+                print(f'  [LQL] ✗ gave up after {MAX_RETRIES} attempts — {last_err}')
+                self.send_json(500, json.dumps({'error': f'LQL still failing after {MAX_RETRIES} attempts — last error: {last_err}'}).encode())
+                return
 
             # Attach pre-run rows — keep lean, no caching of rows (rows re-run fresh on next request)
             if cached_rows is not None:

@@ -994,6 +994,217 @@ a.ext-link:hover { color: var(--accent-d); }
 .fg-risk-low      { background: #4caf50; color: #fff; }
 .fg-date { color: #888; font-size: 10px; margin-left: auto; }
 
+/* ── Security report visual components ───────────────────────────────────── */
+
+/* Metric strip — row of KPI cards at top of report */
+.rpt-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 6px;
+  margin: 8px 0;
+}
+.rpt-metric {
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: center;
+}
+.rpt-metric-value {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--text);
+}
+.rpt-metric-label {
+  font-size: 9.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-top: 2px;
+}
+.rpt-metric.critical .rpt-metric-value { color: #ee3124; }
+.rpt-metric.high     .rpt-metric-value { color: #e65c00; }
+.rpt-metric.medium   .rpt-metric-value { color: #f59e0b; }
+.rpt-metric.ok       .rpt-metric-value { color: #34d399; }
+.rpt-metric.info     .rpt-metric-value { color: #60a5fa; }
+
+/* Severity badge */
+.rpt-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  vertical-align: middle;
+}
+.rpt-badge.critical { background: #ee3124; color: #fff; }
+.rpt-badge.high     { background: #e65c00; color: #fff; }
+.rpt-badge.medium   { background: #f59e0b; color: #000; }
+.rpt-badge.low      { background: #4caf50; color: #fff; }
+.rpt-badge.info     { background: #60a5fa; color: #000; }
+.rpt-badge.ok       { background: #34d399; color: #000; }
+
+/* Risk matrix — 5×5 heat grid */
+.rpt-matrix {
+  margin: 8px 0;
+  font-size: 10px;
+}
+.rpt-matrix-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 4px;
+}
+.rpt-matrix table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.rpt-matrix th {
+  background: transparent !important;
+  color: var(--muted) !important;
+  font-size: 9px !important;
+  font-weight: 600 !important;
+  padding: 3px 4px !important;
+  text-align: center !important;
+  border: none !important;
+  white-space: nowrap;
+}
+.rpt-matrix td {
+  width: 18%;
+  height: 28px;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 600;
+  border: 2px solid var(--bg) !important;
+  border-radius: 3px;
+  vertical-align: middle !important;
+  padding: 2px !important;
+  cursor: default;
+}
+.rpt-matrix td.cell-low    { background: #2d5a27; color: #a3e8a0; }
+.rpt-matrix td.cell-med    { background: #6b4c10; color: #fcd68a; }
+.rpt-matrix td.cell-high   { background: #7a2a10; color: #ffb899; }
+.rpt-matrix td.cell-crit   { background: #7a1010; color: #ffaaaa; }
+.rpt-matrix td.cell-active { outline: 2px solid #fff; outline-offset: -3px; font-size: 11px; }
+
+/* Resource grid — compact card-per-resource layout */
+.rpt-resources {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px;
+  margin: 8px 0;
+}
+.rpt-resource {
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--dim);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 11px;
+}
+.rpt-resource.critical { border-left-color: #ee3124; }
+.rpt-resource.high     { border-left-color: #e65c00; }
+.rpt-resource.medium   { border-left-color: #f59e0b; }
+.rpt-resource.low      { border-left-color: #4caf50; }
+.rpt-resource-name {
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 3px;
+}
+.rpt-resource-meta {
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.rpt-resource-meta .rpt-badge { font-size: 9px; padding: 1px 5px; }
+
+/* Action items — numbered priority list */
+.rpt-actions { margin: 8px 0; }
+.rpt-action {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 9px;
+  margin-bottom: 5px;
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 11px;
+}
+.rpt-action-num {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.rpt-action.critical .rpt-action-num { background: #ee3124; color: #fff; border-color: #ee3124; }
+.rpt-action.high     .rpt-action-num { background: #e65c00; color: #fff; border-color: #e65c00; }
+.rpt-action.medium   .rpt-action-num { background: #f59e0b; color: #000; border-color: #f59e0b; }
+.rpt-action-body { flex: 1; min-width: 0; }
+.rpt-action-title { font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.rpt-action-why { color: var(--muted); font-size: 10px; margin-bottom: 3px; }
+.rpt-action-priority {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+
+/* Section wrapper with left-accent bar */
+.rpt-section {
+  margin: 10px 0;
+  padding: 8px 10px;
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  font-size: 11.5px;
+  color: var(--text);
+}
+.rpt-section.ok     { border-left-color: #34d399; }
+.rpt-section.warn   { border-left-color: #f59e0b; }
+.rpt-section.info   { border-left-color: #60a5fa; }
+
+/* Horizontal divider with label */
+.rpt-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--muted);
+}
+.rpt-divider::before, .rpt-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
 /* AI bubble copy btn — sits below the bubble */
 .turn-ai .bubble-col .rc-copy-btn,
 .turn-ai .bubble-col .rc-pdf-btn,

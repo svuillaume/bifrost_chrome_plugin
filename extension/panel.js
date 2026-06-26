@@ -4,58 +4,60 @@
 const BASE_URL       = 'http://localhost:45321';
 const MAX_TOKENS     = 4096;
 const PAGE_MAX_CHARS = 12000;
-const SYSTEM_PROMPT = `You are a CISO-level security analyst. For security findings use this structure exactly:
+const SYSTEM_PROMPT = `You are a CISO-level security analyst. For security findings produce a clean, structured report using the HTML components below. Keep it readable — no walls of text, no clutter.
 
-# [Title] — Risk Assessment
-**Date:** [today] | **Priority:** CRITICAL/HIGH/MEDIUM/LOW | **Scope:** [assets + accounts]
+## Available HTML components
 
----
+**Metric strip** — top-line numbers only. Use critical | high | medium | ok | info as the class.
+<div class="rpt-metrics">
+  <div class="rpt-metric critical"><div class="rpt-metric-value">N</div><div class="rpt-metric-label">Critical</div></div>
+  <div class="rpt-metric high"><div class="rpt-metric-value">N</div><div class="rpt-metric-label">High</div></div>
+  <div class="rpt-metric info"><div class="rpt-metric-value">N</div><div class="rpt-metric-label">Hosts affected</div></div>
+</div>
 
-## Executive Summary
-2–3 sentences: what is exposed, business consequence, decision needed now. Write for a board member.
-**Executive Decision Required:** [one action within 24 hours]
+**Severity badge** (inline): <span class="rpt-badge critical">CRITICAL</span> <span class="rpt-badge high">HIGH</span> <span class="rpt-badge medium">MEDIUM</span> <span class="rpt-badge low">LOW</span>
 
----
+**Resource list** — one card per impacted resource.
+<div class="rpt-resources">
+  <div class="rpt-resource critical">
+    <div class="rpt-resource-name">resource-name</div>
+    <div class="rpt-resource-meta"><span class="rpt-badge critical">Critical</span> region · cloud · account</div>
+  </div>
+</div>
 
-## Risk Overview
-| Category | Assessment |
-|---|---|
-| Overall Risk | CRITICAL/HIGH/MEDIUM/LOW |
-| Affected Scope | [count + type] |
-| Exploit Likelihood | HIGH/MEDIUM/LOW |
-| Business Impact | HIGH/MEDIUM/LOW |
-| Regulatory Exposure | HIGH/MEDIUM/LOW |
+**Action items** — numbered fix steps, one per action.
+<div class="rpt-actions">
+  <div class="rpt-action critical">
+    <div class="rpt-action-num">1</div>
+    <div class="rpt-action-body">
+      <div class="rpt-action-title">What to do</div>
+      <div class="rpt-action-why">Business risk if not done</div>
+      <div class="rpt-action-priority">Urgency: NOW / 24h / 7d / 30d</div>
+    </div>
+  </div>
+</div>
 
----
+**Section callout** — exec summary, key insight, or decision box.
+<div class="rpt-section">Key message. <strong>Decision required:</strong> action needed.</div>
+<div class="rpt-section warn">Warning.</div>
+<div class="rpt-section ok">All clear / remediated.</div>
 
-## Key Findings
-For each finding: asset table (name, owner, region, risk), then 1–2 sentences on business consequence.
+**Section divider**:
+<div class="rpt-divider">Section Title</div>
 
----
+## Report structure — always follow this order
 
-## Actionable Items
-For each item state: **WHY** it is a risk, **WHAT** to do, and **HOW** with a ready-to-run CLI snippet.
+1. **Metric strip** — 3–5 numbers: severity counts + affected resource count
+2. **Executive Review** — \`rpt-section\`: 2 sentences max. What is at risk, what is the business impact. End with **Decision required:** one sentence.
+3. **Business Impact** divider + 2–3 bullet points (plain markdown) on what happens if not fixed
+4. **Affected Resources** divider + resource cards (one per asset)
+5. **How to Fix** divider + action items with urgency. Add a fenced CLI/console snippet per step where relevant.
+6. **Next Steps** — \`rpt-section ok\` or \`rpt-section\`: single sentence — who does what by when.
 
-| # | Action | Why | Priority |
-|---|---|---|---|
-| 1 | [action] | [risk reason] | NOW/24h/7d |
-
-Include fenced code blocks for each remediation command.
-
----
-
-## Impacted Resources
-MANDATORY — one row per resource, no grouping.
-| Resource | Type | Owner | Risk | Status |
-|---|---|---|---|---|
-
----
-
-## Conclusion
-One sentence: restate risk. One sentence: single most important action now.
-
----
-For non-security questions, be concise and direct.`;
+Rules:
+- Never use markdown tables for structured data — use resource cards instead.
+- Keep prose short — bullet points preferred over paragraphs.
+- For non-security questions, skip the report structure and answer directly.`;
 const ROLE_LABELS    = { user: 'you', ai: 'ai', system: 'sys' };
 
 // ── Gateway profiles ──────────────────────────────────────────────────────
@@ -271,8 +273,26 @@ function renderMarkdown(text) {
     return s;
   };
 
+  // Extract rpt-* HTML blocks (which contain nested divs) before splitting on code fences.
+  // Strategy: stash each top-level <div class="rpt-*">…</div> as a placeholder, run the
+  // markdown pipeline on the remainder, then reinsert raw HTML at the end.
+  const rptStash = [];
+  const withPlaceholders = text.replace(/<div class="rpt-[\s\S]*?(?=\n<div class="rpt-|\n##\s|\n---|\n```|$)/g, match => {
+    // Balance the outer div: count open/close tags to find the real end
+    let depth = 0, end = 0;
+    for (let i = 0; i < match.length; i++) {
+      if (match[i] === '<') {
+        if (match.startsWith('</div', i))        { depth--; if (depth === 0) { end = i + 6; break; } }
+        else if (match.startsWith('<div', i))    depth++;
+      }
+    }
+    const block = end > 0 ? match.slice(0, end) : match;
+    const idx = rptStash.push(block) - 1;
+    return `\x00rpt${idx}\x00`;
+  });
+
   // Split on fenced code blocks first
-  const parts = text.split(/(```[\s\S]*?```)/g);
+  const parts = withPlaceholders.split(/(```[\s\S]*?```)/g);
   const html = parts.map((part, i) => {
     if (i % 2 === 1) {
       const lang = (part.match(/^```(\w+)/) || [])[1] || '';
@@ -345,7 +365,8 @@ function renderMarkdown(text) {
     flushList(); flushTable();
     return out.join('');
   });
-  return html.join('');
+  // Reinsert rpt-* HTML blocks, replacing placeholders with raw HTML
+  return html.join('').replace(/\x00rpt(\d+)\x00/g, (_, idx) => rptStash[+idx] || '');
 }
 
 function setRendered(node, html) {
@@ -439,13 +460,46 @@ function makePdfBtn(getSourceEl) {
       'fg-risk-low':      'background:#4caf50;color:#fff;',
       'fg-date':          'color:#888;font-size:10px;margin-left:auto;',
       'cve-summary':      'margin:6px 0;font-size:12px;',
+      // Report visual components
+      'rpt-metrics':       'display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:6px;margin:8px 0;',
+      'rpt-metric':        'background:#f4f7fb;border:1px solid #d0d5dd;border-radius:8px;padding:8px 10px;text-align:center;',
+      'rpt-metric-value':  'font-size:20px;font-weight:800;line-height:1.1;color:#111;',
+      'rpt-metric-label':  'font-size:9.5px;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-top:2px;',
+      'rpt-badge':         'display:inline-block;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px;',
+      'rpt-resources':     'display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;margin:8px 0;',
+      'rpt-resource':      'background:#f9fafb;border:1px solid #d0d5dd;border-left:3px solid #999;border-radius:6px;padding:7px 9px;font-size:11px;',
+      'rpt-resource-name': 'font-weight:700;font-size:11px;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px;',
+      'rpt-resource-meta': 'font-size:10px;color:#666;display:flex;flex-wrap:wrap;gap:4px;align-items:center;',
+      'rpt-actions':       'margin:8px 0;',
+      'rpt-action':        'display:flex;align-items:flex-start;gap:8px;padding:7px 9px;margin-bottom:5px;background:#f4f7fb;border:1px solid #d0d5dd;border-radius:7px;font-size:11px;',
+      'rpt-action-num':    'min-width:20px;height:20px;border-radius:50%;background:#e5e7eb;border:1px solid #ccc;font-size:10px;font-weight:700;color:#555;display:flex;align-items:center;justify-content:center;flex-shrink:0;',
+      'rpt-action-body':   'flex:1;min-width:0;',
+      'rpt-action-title':  'font-weight:700;color:#111;margin-bottom:2px;',
+      'rpt-action-why':    'color:#666;font-size:10px;margin-bottom:3px;',
+      'rpt-action-priority':'font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.3px;',
+      'rpt-section':       'margin:10px 0;padding:8px 10px;background:#fff5f5;border:1px solid #f0d0d0;border-left:3px solid #cc0000;border-radius:0 8px 8px 0;font-size:11.5px;color:#111;',
+      'rpt-divider':       'display:flex;align-items:center;gap:8px;margin:10px 0 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#888;',
     };
     clone.querySelectorAll('*').forEach(el => {
       el.classList.forEach(cls => {
-        if (styleMap[cls]) {
-          el.style.cssText += styleMap[cls];
-        }
+        if (styleMap[cls]) el.style.cssText += styleMap[cls];
       });
+      // Severity colour overrides for rpt-* compound classes
+      const sevColours = { critical: '#cc0000', high: '#e65c00', medium: '#f59e0b', low: '#4caf50', ok: '#059669', info: '#2563eb' };
+      const sevText    = { critical: '#fff', high: '#fff', medium: '#000', low: '#fff', ok: '#fff', info: '#fff' };
+      for (const [sev, col] of Object.entries(sevColours)) {
+        if (el.classList.contains(sev)) {
+          if (el.classList.contains('rpt-metric'))   el.style.cssText += `border-left:3px solid ${col};`;
+          if (el.classList.contains('rpt-metric-value')) el.style.cssText += `color:${col};`;
+          if (el.classList.contains('rpt-resource')) el.style.cssText += `border-left-color:${col};`;
+          if (el.classList.contains('rpt-action'))   el.style.cssText += `border-left:3px solid ${col};`;
+          if (el.classList.contains('rpt-action-num')) el.style.cssText += `background:${col};color:${sevText[sev]};border-color:${col};`;
+          if (el.classList.contains('rpt-badge'))    el.style.cssText += `background:${col};color:${sevText[sev]};`;
+          if (el.classList.contains('rpt-section') && sev === 'ok') el.style.cssText += `background:#f0fdf4;border-left-color:#059669;border-color:#bbf7d0;`;
+          if (el.classList.contains('rpt-section') && sev === 'warn') el.style.cssText += `background:#fffbeb;border-left-color:#f59e0b;border-color:#fde68a;`;
+          if (el.classList.contains('rpt-section') && sev === 'info') el.style.cssText += `background:#eff6ff;border-left-color:#2563eb;border-color:#bfdbfe;`;
+        }
+      }
       el.removeAttribute('class');
     });
 
@@ -1716,16 +1770,133 @@ function buildCveAnalysisPrompt(d, fgOutbreaks) {
 
   lines.push(
     ``,
-    `IMPORTANT REPORTING INSTRUCTIONS:`,
-    `  1. Include a "Threat Radar" section combining CVSS + EPSS + KEV + FortiGuard score`,
-    `  2. Include a "FortiGuard Threat Correlation" section — reference outbreak URLs, map MITRE TTPs`,
-    `  3. Call out CISA KEV status prominently if inKev=true — this means active exploitation`,
-    `  4. Use EPSS percentile to justify urgency: top 10th percentile = patch within 24h`,
-    `  5. Include all reference links (FortiGuard, NVD) in the References section`,
-    ``,
-    EXEC_REPORT_TEMPLATE,
+    `Write a clean 5-section report following the system prompt structure exactly:`,
+    `1. Metric strip — total affected hosts, internet-exposed count, CVSS score, EPSS %`,
+    `2. Executive Review — 2 sentences: what is vulnerable, what is the blast radius. Decision required: patch or isolate.`,
+    `3. Business Impact — 2–3 bullets: data breach risk, compliance exposure, operational disruption`,
+    `4. Affected Resources — one resource card per host (hostname, severity badge, internet-exposed flag)`,
+    `5. How to Fix + Next Steps — patch command, urgency, who owns it`,
   );
+  if (intel.kev?.inKev)            lines.push(`NOTE: This CVE is in CISA KEV — actively exploited. Urgency is NOW.`);
+  if (intel.epss?.percentile > 0.9) lines.push(`NOTE: EPSS top 10th percentile — patch within 24h.`);
   return lines.join('\n');
+}
+
+// ── SVG radar + attack-surface bar for CVE threat intelligence ────────────────
+function buildThreatRadarHtml(cveId, intel, data) {
+  // Normalise each axis 0-1
+  const cvss    = (intel.nvd?.cvssV3Score  ?? 0) / 10;
+  const epss    = intel.epss?.score        ?? 0;          // already 0-1
+  const kev     = intel.kev?.inKev         ? 1 : 0;
+  const fg      = (intel.threatRadarScore  ?? 0) / 100;
+  const exposed = data.total_affected > 0
+                  ? Math.min(data.internet_exposed / data.total_affected, 1)
+                  : 0;
+  // host count axis — normalise on a rough log scale, cap at 1
+  const hostN   = data.total_affected > 0 ? Math.min(Math.log10(data.total_affected + 1) / 3, 1) : 0;
+
+  const axes  = ['CVSS', 'EPSS', 'KEV', 'FortiGuard', 'Exposed%', 'Hosts'];
+  const vals  = [cvss, epss, kev, fg, exposed, hostN];
+  const N     = axes.length;
+  const R     = 72;   // radius of chart
+  const cx    = 90; const cy = 90;
+
+  // Polygon points helper
+  const pt = (i, v) => {
+    const angle = (Math.PI * 2 * i / N) - Math.PI / 2;
+    return [cx + v * R * Math.cos(angle), cy + v * R * Math.sin(angle)];
+  };
+
+  // Grid rings at 25/50/75/100%
+  const rings = [0.25, 0.5, 0.75, 1].map(r => {
+    const pts = Array.from({length: N}, (_, i) => pt(i, r).join(',')).join(' ');
+    return `<polygon points="${pts}" fill="none" stroke="#e0e0e0" stroke-width="${r === 1 ? 1.2 : 0.7}"/>`;
+  }).join('');
+
+  // Axis lines + labels
+  const axisLines = axes.map((label, i) => {
+    const [x2, y2] = pt(i, 1);
+    const [lx, ly] = pt(i, 1.22);
+    const anchor   = lx < cx - 5 ? 'end' : lx > cx + 5 ? 'start' : 'middle';
+    return `<line x1="${cx}" y1="${cy}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#ccc" stroke-width="0.8"/>` +
+           `<text x="${lx.toFixed(1)}" y="${(ly + 3).toFixed(1)}" font-size="7.5" fill="#555" text-anchor="${anchor}">${label}</text>`;
+  }).join('');
+
+  // Value polygon
+  const polyPts = vals.map((v, i) => pt(i, v).join(',')).join(' ');
+  const composite = (cvss * 0.25 + epss * 0.3 + kev * 0.2 + fg * 0.15 + exposed * 0.1);
+  const radarCol  = composite >= 0.7 ? '#cc0000' : composite >= 0.4 ? '#e65c00' : '#2196f3';
+  const scoreLabel = Math.round(composite * 100);
+  const scoreLabelCol = composite >= 0.7 ? '#cc0000' : composite >= 0.4 ? '#e65c00' : '#4caf50';
+
+  // Dot on each axis
+  const dots = vals.map((v, i) => {
+    const [x, y] = pt(i, v);
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="${radarCol}" stroke="#fff" stroke-width="1"/>`;
+  }).join('');
+
+  const radarSvg =
+    `<svg viewBox="0 0 180 180" width="160" height="160" style="flex-shrink:0">` +
+    rings + axisLines +
+    `<polygon points="${polyPts}" fill="${radarCol}" fill-opacity="0.18" stroke="${radarCol}" stroke-width="1.5" stroke-linejoin="round"/>` +
+    dots +
+    `<text x="${cx}" y="${cy + 4}" font-size="13" font-weight="bold" fill="${scoreLabelCol}" text-anchor="middle">${scoreLabel}</text>` +
+    `<text x="${cx}" y="${cy + 13}" font-size="6.5" fill="#888" text-anchor="middle">/ 100</text>` +
+    `</svg>`;
+
+  // ── Right panel: 3 headline numbers + badges + description ──────────────
+  const total    = data.total_affected || 0;
+  const expCount = data.internet_exposed || 0;
+  const sevColor = intel.nvd?.cvssV3Severity === 'CRITICAL' ? '#cc0000'
+                 : intel.nvd?.cvssV3Severity === 'HIGH'     ? '#e65c00'
+                 : intel.nvd?.cvssV3Severity === 'MEDIUM'   ? '#f59e0b' : '#4caf50';
+
+  const tiles =
+    `<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">` +
+    // CVSS
+    (intel.nvd?.cvssV3Score
+      ? `<div style="background:#fff;border:1.5px solid ${sevColor};border-radius:6px;padding:5px 10px;text-align:center;min-width:48px">` +
+        `<div style="font-size:17px;font-weight:700;color:${sevColor};line-height:1">${intel.nvd.cvssV3Score}</div>` +
+        `<div style="font-size:8px;color:#888">CVSSv3</div></div>` : '') +
+    // EPSS
+    (intel.epss?.score !== undefined
+      ? `<div style="background:#fff;border:1.5px solid ${intel.epss.score>0.5?'#cc0000':intel.epss.score>0.1?'#e65c00':'#aaa'};border-radius:6px;padding:5px 10px;text-align:center;min-width:48px">` +
+        `<div style="font-size:17px;font-weight:700;color:${intel.epss.score>0.5?'#cc0000':intel.epss.score>0.1?'#e65c00':'#555'};line-height:1">${(intel.epss.score*100).toFixed(0)}%</div>` +
+        `<div style="font-size:8px;color:#888">EPSS</div></div>` : '') +
+    // Hosts affected
+    `<div style="background:#fff;border:1.5px solid ${total>0?'#e65c00':'#ccc'};border-radius:6px;padding:5px 10px;text-align:center;min-width:48px">` +
+    `<div style="font-size:17px;font-weight:700;color:${total>0?'#e65c00':'#888'};line-height:1">${total}</div>` +
+    `<div style="font-size:8px;color:#888">hosts</div></div>` +
+    // Internet exposed
+    `<div style="background:#fff;border:1.5px solid ${expCount>0?'#cc0000':'#ccc'};border-radius:6px;padding:5px 10px;text-align:center;min-width:48px">` +
+    `<div style="font-size:17px;font-weight:700;color:${expCount>0?'#cc0000':'#888'};line-height:1">${expCount}</div>` +
+    `<div style="font-size:8px;color:#888">🌐 exposed</div></div>` +
+    // KEV badge tile
+    (intel.kev?.inKev
+      ? `<div style="background:#fef2f2;border:1.5px solid #cc0000;border-radius:6px;padding:5px 10px;text-align:center;min-width:48px">` +
+        `<div style="font-size:10px;font-weight:700;color:#cc0000;line-height:1.6">⚠ KEV</div>` +
+        `<div style="font-size:8px;color:#888">exploited</div></div>` : '') +
+    `</div>`;
+
+  const desc = intel.nvd?.description
+    ? `<div style="font-size:10px;color:#555;line-height:1.5;margin-bottom:6px">${intel.nvd.description.slice(0,180)}…</div>`
+    : '';
+
+  const links =
+    `<div class="fg-search-link">` +
+    `<a href="https://www.fortiguard.com/search?q=${encodeURIComponent(cveId)}" target="_blank">FortiGuard</a>` +
+    `&nbsp;·&nbsp;<a href="https://nvd.nist.gov/vuln/detail/${encodeURIComponent(cveId)}" target="_blank">NVD</a>` +
+    (intel.kev?.inKev ? `&nbsp;·&nbsp;<a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" target="_blank">CISA KEV</a>` : '') +
+    `</div>`;
+
+  const rightPanel = `<div style="flex:1;min-width:0">${tiles}${desc}${links}</div>`;
+
+  return (
+    `<div style="font-size:11px;font-weight:600;color:#444;margin-bottom:8px">🎯 ${cveId} — Threat Radar</div>` +
+    `<div style="display:flex;gap:12px;align-items:flex-start">` +
+    radarSvg + rightPanel +
+    `</div>`
+  );
 }
 
 async function runCveSearch() {
@@ -1798,46 +1969,11 @@ async function runCveSearch() {
     const resultsEl = document.createElement('div');
     resultsEl.className = 'cve-result-body';
 
-    // ── Threat Radar card — inserted FIRST so it appears at top ──────────────
+    // ── Visual Threat Radar card — inserted FIRST ─────────────────────────────
     const intelEl = document.createElement('div');
     intelEl.className = 'fg-outbreak-card';
-    let intelHtml = '';
-
-    if (intel.threatRadarScore !== undefined) {
-      const score = intel.threatRadarScore;
-      const col = score >= 70 ? '#cc0000' : score >= 40 ? '#e65c00' : '#4caf50';
-      intelHtml += `<div style="margin-bottom:6px"><strong>🎯 Threat Radar Score: <span style="color:${col};font-size:15px">${score}/100</span></strong></div>`;
-    }
-
-    const badges = [];
-    if (intel.nvd?.cvssV3Score) {
-      const sev = intel.nvd.cvssV3Severity || '';
-      const c = sev === 'CRITICAL' ? '#cc0000' : sev === 'HIGH' ? '#e65c00' : sev === 'MEDIUM' ? '#f5a623' : '#4caf50';
-      badges.push(`<span class="fg-risk" style="background:${c};color:#fff">CVSSv3 ${intel.nvd.cvssV3Score} ${sev}</span>`);
-    }
-    if (intel.epss?.score !== undefined) {
-      const pct = (intel.epss.score * 100).toFixed(1);
-      const c = intel.epss.score > 0.5 ? '#cc0000' : intel.epss.score > 0.1 ? '#e65c00' : '#555';
-      badges.push(`<span class="fg-risk" style="background:${c};color:#fff">EPSS ${pct}%</span>`);
-    }
-    if (intel.kev?.inKev) {
-      badges.push(`<span class="fg-risk" style="background:#cc0000;color:#fff">⚠ CISA KEV</span>`);
-    }
-    if (badges.length) intelHtml += `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px">${badges.join('')}</div>`;
-
-    if (intel.nvd?.description) {
-      intelHtml += `<div style="font-size:10.5px;color:#333;margin-bottom:4px">${intel.nvd.description.slice(0, 220)}…</div>`;
-    }
-
-    intelHtml +=
-      `<div class="fg-search-link" style="margin-top:4px">` +
-      `🔍 <a href="https://www.fortiguard.com/search?q=${encodeURIComponent(cveId)}" target="_blank">FortiGuard</a>` +
-      `&nbsp;|&nbsp;<a href="https://nvd.nist.gov/vuln/detail/${encodeURIComponent(cveId)}" target="_blank">NVD</a>` +
-      (intel.kev?.inKev ? `&nbsp;|&nbsp;<a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" target="_blank">CISA KEV</a>` : '') +
-      `</div>`;
-
-    intelEl.innerHTML = intelHtml;
-    resultsEl.appendChild(intelEl);  // TOP of card
+    intelEl.innerHTML = buildThreatRadarHtml(cveId, intel, data);
+    resultsEl.appendChild(intelEl);
 
     // ── Host list ─────────────────────────────────────────────────────────────
     renderCveResults(data, resultsEl);
@@ -1992,7 +2128,7 @@ function renderCveResults(data, resultsEl) {
 function formatApiEnrichment(enrichment) {
   if (!enrichment || !Object.keys(enrichment).length) return '';
   const lines = ['\n\n--- FortiCNAPP API Correlation ---'];
-  const { alerts, vulnerabilities, inventory, cloud_activities, container_vulnerabilities, machines } = enrichment;
+  const { alerts, vulnerabilities, inventory, cloud_activities, container_vulnerabilities, machines, s3_sensitive_data } = enrichment;
   if (alerts) {
     lines.push(`Open Critical/High Alerts (${alerts.count} total):`);
     (alerts.items || []).forEach(a => {
@@ -2014,6 +2150,18 @@ function formatApiEnrichment(enrichment) {
       const fk = v.featureKey || {}; const fi = v.fixInfo || {};
       lines.push(`  [${v.severity}] ${v.vulnId} pkg:${fk.name || '?'} ${fk.version_installed || ''} → fix:${fi.fixed_version || fi.fix_available || '?'} status:${v.status || ''}`);
     });
+  }
+  if (s3_sensitive_data) {
+    lines.push(`S3 Sensitive Data Correlation — Inventory API tag scan (${s3_sensitive_data.count} buckets, ${s3_sensitive_data.sensitive_count} with data-classification tags):`);
+    (s3_sensitive_data.items || []).forEach(b => {
+      const tagStr = Object.keys(b.sensitive_tags || {}).length
+        ? Object.entries(b.sensitive_tags).map(([k, v]) => `${k}=${v}`).join(', ')
+        : 'no classification tags';
+      lines.push(`  ${b.urn || '?'} region:${b.resourceRegion || '?'} status:${b.status || '?'} tags:[${tagStr}]`);
+    });
+    if (s3_sensitive_data.sensitive_count === 0) {
+      lines.push('  NOTE: No data-classification tags found. Buckets may be untagged — treat all exposed buckets as potentially sensitive.');
+    }
   }
   if (inventory) {
     lines.push(`Inventory status for matched cloud resources (${inventory.count} total):`);
@@ -2160,6 +2308,102 @@ document.querySelectorAll('.lql-tab').forEach(tab => {
 
 let _genQueryText = '';
 
+// Kick off an AI-assisted scoping conversation after an LQL error.
+// Injects a hidden user message with error context so Claude asks targeted
+// clarifying questions. After the AI responds, a "Re-run LQL" quick-action
+// button appears so the user can retry with a refined objective.
+function _startLqlScopingConversation(objective, errorMsg) {
+  const scopingPrompt = [
+    `The user tried to run a FortiCNAPP LQL security investigation with this objective:`,
+    `"${objective}"`,
+    ``,
+    `It failed with: ${errorMsg}`,
+    ``,
+    `As a CISO-level FortiCNAPP expert, ask 2–4 targeted scoping questions to clarify intent.`,
+    `Cover only what is missing — typical gaps include: cloud provider (AWS/GCP/Azure),`,
+    `resource type (hosts, containers, S3 buckets, IAM roles…), severity filter (CRITICAL/HIGH),`,
+    `time window (last 7d / 30d / custom), and account or environment scope (prod/staging/all).`,
+    ``,
+    `After your questions, end with a blank line then a best-guess refined objective on its own line`,
+    `in exactly this format (no quotes around the text):`,
+    `**Proposed objective:** <refined one-sentence objective>`,
+    ``,
+    `The user can answer your questions then click Re-run to execute the query with the proposed`,
+    `objective updated to reflect their answers.`,
+  ].join('\n');
+
+  history.push({ role: 'user', content: scopingPrompt });
+  // Show the user-facing version in chat (without the raw prompt internals)
+  appendTurn('user', `Investigation: "${objective}" — scoping needed`);
+
+  // After AI responds, attach a Re-run button to its bubble
+  const bubble = appendTurn('ai');
+  const cursor = Object.assign(document.createElement('span'), { className: 'cursor' });
+  bubble.appendChild(cursor);
+  busy = true;
+  el('send').disabled = true;
+
+  const gw      = el('gateway').value || 'bifrost';
+  const profile = GATEWAYS[gw] || GATEWAYS.bifrost;
+  const key     = keyInput.value.trim();
+  const baseUrl = urlInput.value.trim().replace(/\/+$/, '');
+  const headers = profile.headers(key, gw === 'helicone' ? key2Input.value.trim() : undefined);
+
+  setStatus('scoping…', 'busy');
+  fetch(`${baseUrl}/v1/messages`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      model: el('model').value, max_tokens: MAX_TOKENS,
+      stream: true, system: SYSTEM_PROMPT, messages: history,
+      tools: [WEB_SEARCH_TOOL],
+    }),
+  }).then(async res => {
+    if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
+    const { out } = await readStream(res, bubble, cursor);
+    cursor.remove();
+    if (out) {
+      const node = document.createElement('span');
+      setRendered(node, renderMarkdown(out));
+      bubble.appendChild(node);
+      bubble.appendChild(makeCopyBtn(out));
+      bubble.appendChild(makePdfBtn(node));
+      if (bubble._allBody) {
+        bubble._allBody.appendChild(makeCopyBtn(out));
+        bubble._allBody.appendChild(makePdfBtn(bubble._allBody.querySelector('.content') || node));
+      }
+    }
+    history.push({ role: 'assistant', content: out });
+    setStatus('ok', 'ok');
+
+    // Extract the proposed objective Claude embedded in its response
+    const proposedMatch = out.match(/\*\*Proposed objective:\*\*\s*(.+)/i);
+    const proposedObjective = proposedMatch ? proposedMatch[1].trim() : objective;
+
+    // Append a Re-run LQL button — uses the proposed objective, updated with user answers
+    const rerunBtn = document.createElement('button');
+    rerunBtn.className     = 'rc-copy-btn';
+    rerunBtn.textContent   = '⟳ Run query';
+    rerunBtn.title         = 'Run the LQL query with the proposed objective above';
+    rerunBtn.style.cssText = 'margin-top:6px;display:block;';
+    rerunBtn.addEventListener('click', () => {
+      el('lql-objective').value = proposedObjective;
+      el('lql-gen-btn').click();
+    });
+    bubble.appendChild(rerunBtn);
+    if (bubble._allBody) bubble._allBody.appendChild(rerunBtn.cloneNode(true));
+    scrollLog();
+  }).catch(err => {
+    cursor.remove();
+    bubble.textContent = `Error: ${err.message}`;
+    history.pop();
+    setStatus('error', 'err');
+  }).finally(() => {
+    busy = false;
+    el('send').disabled = false;
+    scrollLog();
+  });
+}
+
 el('lql-gen-btn').addEventListener('click', async () => {
   const objective = el('lql-objective').value.trim();
   if (!objective) return;
@@ -2242,7 +2486,7 @@ el('lql-gen-btn').addEventListener('click', async () => {
     statusEl.textContent = `✗ ${e.message}`;
     statusEl.className   = 'err';
     setStatus('LQL error', 'err');
-    appendTurn('system', `LQL error: ${e.message}`);
+    _startLqlScopingConversation(objective, e.message);
   } finally {
     btn.disabled = false;
   }
